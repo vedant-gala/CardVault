@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Card, Reward, Transaction, Notification, InsertCard, InsertReward, InsertTransaction, Bill, Payment, CreditScore, InsertCreditScore } from "@shared/schema";
@@ -20,6 +21,12 @@ import { Card as CardComponent } from "@/components/ui/card";
 
 export default function Dashboard() {
   const { toast } = useToast();
+  const [recommendations, setRecommendations] = useState<Array<{
+    title: string;
+    description: string;
+    category: string;
+    estimatedSavings: string;
+  }>>([]);
 
   const { data: cards = [], isLoading: cardsLoading } = useQuery<Card[]>({
     queryKey: ["/api/cards"],
@@ -171,6 +178,21 @@ export default function Dashboard() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+    },
+  });
+
+  const getRecommendationsMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest("POST", "/api/offer-recommendations", {});
+    },
+    onSuccess: (data: any) => {
+      if (data?.recommendations) {
+        setRecommendations(data.recommendations);
+        toast({
+          title: "Recommendations Ready",
+          description: `Found ${data.recommendations.length} personalized offers for you`,
+        });
+      }
     },
   });
 
@@ -349,18 +371,56 @@ export default function Dashboard() {
                   </AddRewardDialog>
                 </CardComponent>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {rewards.map((reward) => {
-                    const card = cards.find(c => c.id === reward.cardId);
-                    return (
-                      <RewardProgressCard 
-                        key={reward.id} 
-                        reward={reward} 
-                        cardColor={card?.cardColor ?? undefined}
-                      />
-                    );
-                  })}
-                </div>
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {rewards.map((reward) => {
+                      const card = cards.find(c => c.id === reward.cardId);
+                      return (
+                        <RewardProgressCard 
+                          key={reward.id} 
+                          reward={reward} 
+                          cardColor={card?.cardColor ?? undefined}
+                        />
+                      );
+                    })}
+                  </div>
+                  
+                  {transactions.length > 0 && (
+                    <div className="mt-8">
+                      <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-xl font-semibold">AI-Powered Offer Recommendations</h3>
+                        <Button 
+                          onClick={() => getRecommendationsMutation.mutate()}
+                          disabled={getRecommendationsMutation.isPending}
+                          data-testid="button-get-recommendations"
+                        >
+                          <Sparkles className="w-4 h-4 mr-2" />
+                          {getRecommendationsMutation.isPending ? "Analyzing..." : "Get Recommendations"}
+                        </Button>
+                      </div>
+                      
+                      {recommendations && recommendations.length > 0 && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {recommendations.map((rec, idx) => (
+                            <CardComponent key={idx} className="p-5" data-testid={`recommendation-${idx}`}>
+                              <div className="flex items-start gap-3">
+                                <Sparkles className="w-5 h-5 text-purple-400 mt-1 flex-shrink-0" />
+                                <div className="flex-1">
+                                  <h4 className="font-semibold mb-2">{rec.title}</h4>
+                                  <p className="text-sm text-muted-foreground mb-3">{rec.description}</p>
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-xs bg-purple-500/10 text-purple-400 px-2 py-1 rounded">{rec.category}</span>
+                                    <span className="text-xs font-semibold text-green-500">{rec.estimatedSavings}</span>
+                                  </div>
+                                </div>
+                              </div>
+                            </CardComponent>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
               )}
             </TabsContent>
 

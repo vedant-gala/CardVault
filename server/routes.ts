@@ -12,7 +12,7 @@ import {
   insertAutopaySettingsSchema,
   insertCreditScoreSchema
 } from "@shared/schema";
-import { extractTransactionFromSms, analyzeEmailForCreditCard } from "./openai";
+import { extractTransactionFromSms, analyzeEmailForCreditCard, generateOfferRecommendations } from "./openai";
 import { fetchCreditCardEmails } from "./gmail";
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -379,6 +379,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(score);
     } catch (error: any) {
       res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/offer-recommendations", async (req, res) => {
+    try {
+      const transactions = await storage.getTransactions();
+      const cards = await storage.getCards();
+
+      if (transactions.length === 0) {
+        return res.json({ recommendations: [] });
+      }
+
+      const categoryTotals: Record<string, number> = {};
+      transactions.forEach(t => {
+        const amt = Number(t.amount);
+        categoryTotals[t.category] = (categoryTotals[t.category] || 0) + amt;
+      });
+
+      const topCategories = Object.entries(categoryTotals)
+        .sort(([, a], [, b]) => b - a)
+        .slice(0, 3)
+        .map(([cat]) => cat);
+
+      const totalSpending = Object.values(categoryTotals).reduce((a, b) => a + b, 0);
+      const monthlyAverage = totalSpending / (new Set(transactions.map(t => new Date(t.transactionDate).toISOString().slice(0, 7))).size || 1);
+
+      const recommendations = await generateOfferRecommendations({
+        categoryTotals,
+        topCategories,
+        totalSpending,
+        monthlyAverage,
+        cardNames: cards.map(c => c.cardName),
+      });
+
+      res.json(recommendations);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
     }
   });
 

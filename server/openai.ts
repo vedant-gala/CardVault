@@ -105,3 +105,59 @@ export async function summarizeOfferChange(oldOffer: string, newOffer: string): 
     return "Offer has been updated. Please review the details.";
   }
 }
+
+export async function generateOfferRecommendations(spendingData: {
+  categoryTotals: Record<string, number>;
+  topCategories: string[];
+  totalSpending: number;
+  monthlyAverage: number;
+  cardNames: string[];
+}): Promise<{
+  recommendations: {
+    title: string;
+    description: string;
+    category: string;
+    estimatedSavings: string;
+  }[];
+} | null> {
+  try {
+    const response = await openai.chat.completions.create({
+      model: "gpt-5",
+      messages: [
+        {
+          role: "system",
+          content: `You are a credit card offer recommendation expert. Based on user spending patterns, recommend relevant credit card offers and rewards programs.
+          Respond with JSON in this format:
+          {
+            "recommendations": [
+              {
+                "title": "Offer title",
+                "description": "Why this offer is good for them (2-3 sentences)",
+                "category": "Category this targets",
+                "estimatedSavings": "₹X,XXX per year (estimate)"
+              }
+            ]
+          }
+          Provide 3-5 personalized recommendations based on their top spending categories. Be specific and practical.`,
+        },
+        {
+          role: "user",
+          content: `User's spending profile:
+- Total monthly spending: ₹${spendingData.totalSpending.toLocaleString()}
+- Top categories: ${spendingData.topCategories.join(", ")}
+- Category breakdown: ${Object.entries(spendingData.categoryTotals).map(([cat, amt]) => `${cat}: ₹${amt.toLocaleString()}`).join(", ")}
+- Current cards: ${spendingData.cardNames.join(", ")}
+
+Generate personalized offer recommendations.`,
+        },
+      ],
+      response_format: { type: "json_object" },
+    });
+
+    const result = JSON.parse(response.choices[0].message.content || "null");
+    return result;
+  } catch (error) {
+    console.error("Error generating offer recommendations:", error);
+    return null;
+  }
+}
