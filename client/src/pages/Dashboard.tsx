@@ -15,7 +15,7 @@ import { CardLoadingSkeleton, RewardLoadingSkeleton, TransactionLoadingSkeleton 
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { CreditCard, Gift, Receipt, Bell, Mail, Sparkles, FileText, TrendingUp } from "lucide-react";
+import { CreditCard, Gift, Receipt, Bell, Mail, Sparkles, FileText, TrendingUp, BarChart3 } from "lucide-react";
 import { Card as CardComponent } from "@/components/ui/card";
 
 export default function Dashboard() {
@@ -196,7 +196,7 @@ export default function Dashboard() {
 
         <div className="mt-12">
           <Tabs defaultValue="cards" className="w-full">
-            <TabsList className="grid w-full grid-cols-6 mb-8">
+            <TabsList className="grid w-full grid-cols-7 mb-8">
               <TabsTrigger value="cards" data-testid="tab-cards">
                 <CreditCard className="w-4 h-4 mr-2" />
                 Cards
@@ -212,6 +212,10 @@ export default function Dashboard() {
               <TabsTrigger value="bills" data-testid="tab-bills">
                 <FileText className="w-4 h-4 mr-2" />
                 Bills
+              </TabsTrigger>
+              <TabsTrigger value="analytics" data-testid="tab-analytics">
+                <BarChart3 className="w-4 h-4 mr-2" />
+                Analytics
               </TabsTrigger>
               <TabsTrigger value="transactions" data-testid="tab-transactions">
                 <Receipt className="w-4 h-4 mr-2" />
@@ -423,6 +427,130 @@ export default function Dashboard() {
                       </CardComponent>
                     );
                   })}
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="analytics" className="space-y-6">
+              <div className="flex items-center justify-between">
+                <h2 className="text-2xl font-bold">Spending Analytics</h2>
+              </div>
+
+              {transactionsLoading ? (
+                <CardLoadingSkeleton />
+              ) : transactions.length === 0 ? (
+                <CardComponent className="p-12 text-center">
+                  <BarChart3 className="w-16 h-16 mx-auto mb-4 text-muted-foreground opacity-50" />
+                  <h3 className="text-xl font-semibold mb-2">No Transaction Data</h3>
+                  <p className="text-muted-foreground">
+                    Analytics will appear here once you have transaction history
+                  </p>
+                </CardComponent>
+              ) : (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <CardComponent className="p-6">
+                    <h3 className="text-lg font-semibold mb-4">Spending by Category</h3>
+                    <div className="space-y-4">
+                      {(() => {
+                        const categoryTotals: Record<string, number> = {};
+                        transactions.forEach(t => {
+                          const amt = Number(t.amount);
+                          categoryTotals[t.category] = (categoryTotals[t.category] || 0) + amt;
+                        });
+                        const totalSpent = Object.values(categoryTotals).reduce((a, b) => a + b, 0);
+                        
+                        return Object.entries(categoryTotals)
+                          .sort(([, a], [, b]) => b - a)
+                          .map(([category, amount]) => {
+                            const percentage = (amount / totalSpent) * 100;
+                            return (
+                              <div key={category} data-testid={`category-${category}`}>
+                                <div className="flex items-center justify-between mb-2">
+                                  <span className="font-medium">{category}</span>
+                                  <span className="text-muted-foreground">₹{amount.toLocaleString()}</span>
+                                </div>
+                                <div className="w-full bg-muted rounded-full h-2">
+                                  <div 
+                                    className="bg-gradient-to-r from-purple-600 to-purple-400 h-2 rounded-full transition-all"
+                                    style={{ width: `${percentage}%` }}
+                                  />
+                                </div>
+                                <div className="text-xs text-muted-foreground mt-1">{percentage.toFixed(1)}% of total</div>
+                              </div>
+                            );
+                          });
+                      })()}
+                    </div>
+                  </CardComponent>
+
+                  <CardComponent className="p-6">
+                    <h3 className="text-lg font-semibold mb-4">Monthly Comparison</h3>
+                    <div className="space-y-4">
+                      {(() => {
+                        const monthlyTotals: Record<string, number> = {};
+                        transactions.forEach(t => {
+                          const month = new Date(t.transactionDate).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+                          const amt = Number(t.amount);
+                          monthlyTotals[month] = (monthlyTotals[month] || 0) + amt;
+                        });
+                        
+                        const maxAmount = Math.max(...Object.values(monthlyTotals));
+                        
+                        return Object.entries(monthlyTotals)
+                          .sort(([a], [b]) => new Date(a).getTime() - new Date(b).getTime())
+                          .slice(-6)
+                          .map(([month, amount]) => {
+                            const heightPercentage = (amount / maxAmount) * 100;
+                            return (
+                              <div key={month} data-testid={`month-${month}`}>
+                                <div className="flex items-center justify-between mb-2">
+                                  <span className="font-medium">{month}</span>
+                                  <span className="text-muted-foreground">₹{amount.toLocaleString()}</span>
+                                </div>
+                                <div className="w-full bg-muted rounded-full h-8 relative">
+                                  <div 
+                                    className="bg-gradient-to-r from-purple-600 to-purple-400 h-full rounded-full transition-all flex items-center justify-end px-3"
+                                    style={{ width: `${heightPercentage}%` }}
+                                  >
+                                    {heightPercentage > 20 && (
+                                      <span className="text-xs font-semibold text-white">{heightPercentage.toFixed(0)}%</span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          });
+                      })()}
+                    </div>
+                  </CardComponent>
+
+                  <CardComponent className="p-6 lg:col-span-2">
+                    <h3 className="text-lg font-semibold mb-4">Spending Insights</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      {(() => {
+                        const totalSpent = transactions.reduce((sum, t) => sum + Number(t.amount), 0);
+                        const avgTransaction = totalSpent / transactions.length;
+                        const categoryCount = new Set(transactions.map(t => t.category)).size;
+                        
+                        return (
+                          <>
+                            <div className="p-4 bg-purple-500/10 rounded-lg">
+                              <div className="text-sm text-muted-foreground mb-1">Total Spending</div>
+                              <div className="text-2xl font-bold text-purple-400">₹{totalSpent.toLocaleString()}</div>
+                            </div>
+                            <div className="p-4 bg-purple-500/10 rounded-lg">
+                              <div className="text-sm text-muted-foreground mb-1">Avg Transaction</div>
+                              <div className="text-2xl font-bold text-purple-400">₹{avgTransaction.toLocaleString()}</div>
+                            </div>
+                            <div className="p-4 bg-purple-500/10 rounded-lg">
+                              <div className="text-sm text-muted-foreground mb-1">Categories</div>
+                              <div className="text-2xl font-bold text-purple-400">{categoryCount}</div>
+                            </div>
+                          </>
+                        );
+                      })()}
+                    </div>
+                  </CardComponent>
                 </div>
               )}
             </TabsContent>
