@@ -1,6 +1,6 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Card, Reward, Transaction, Notification, InsertCard, InsertReward, InsertTransaction, Bill, Payment } from "@shared/schema";
+import { Card, Reward, Transaction, Notification, InsertCard, InsertReward, InsertTransaction, Bill, Payment, CreditScore, InsertCreditScore } from "@shared/schema";
 import { DashboardStats } from "@/components/DashboardStats";
 import { CreditCardDisplay } from "@/components/CreditCardDisplay";
 import { RewardProgressCard } from "@/components/RewardProgressCard";
@@ -15,7 +15,7 @@ import { CardLoadingSkeleton, RewardLoadingSkeleton, TransactionLoadingSkeleton 
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { CreditCard, Gift, Receipt, Bell, Mail, Sparkles, FileText } from "lucide-react";
+import { CreditCard, Gift, Receipt, Bell, Mail, Sparkles, FileText, TrendingUp } from "lucide-react";
 import { Card as CardComponent } from "@/components/ui/card";
 
 export default function Dashboard() {
@@ -39,6 +39,10 @@ export default function Dashboard() {
 
   const { data: bills = [], isLoading: billsLoading } = useQuery<Bill[]>({
     queryKey: ["/api/bills"],
+  });
+
+  const { data: creditScores = [], isLoading: creditScoresLoading } = useQuery<CreditScore[]>({
+    queryKey: ["/api/credit-scores"],
   });
 
   const { data: payments = [], isLoading: paymentsLoading } = useQuery<Payment[]>({
@@ -192,10 +196,14 @@ export default function Dashboard() {
 
         <div className="mt-12">
           <Tabs defaultValue="cards" className="w-full">
-            <TabsList className="grid w-full grid-cols-5 mb-8">
+            <TabsList className="grid w-full grid-cols-6 mb-8">
               <TabsTrigger value="cards" data-testid="tab-cards">
                 <CreditCard className="w-4 h-4 mr-2" />
                 Cards
+              </TabsTrigger>
+              <TabsTrigger value="credit-score" data-testid="tab-credit-score">
+                <TrendingUp className="w-4 h-4 mr-2" />
+                Credit Score
               </TabsTrigger>
               <TabsTrigger value="rewards" data-testid="tab-rewards">
                 <Gift className="w-4 h-4 mr-2" />
@@ -246,6 +254,67 @@ export default function Dashboard() {
                       onDelete={(id) => deleteCardMutation.mutate(id)}
                     />
                   ))}
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="credit-score" className="space-y-6">
+              <div className="flex items-center justify-between">
+                <h2 className="text-2xl font-bold">Credit Score</h2>
+              </div>
+
+              {creditScoresLoading ? (
+                <CardLoadingSkeleton />
+              ) : creditScores.length === 0 ? (
+                <CardComponent className="p-12 text-center">
+                  <TrendingUp className="w-16 h-16 mx-auto mb-4 text-muted-foreground opacity-50" />
+                  <h3 className="text-xl font-semibold mb-2">No Credit Score History</h3>
+                  <p className="text-muted-foreground">
+                    Your credit score history will appear here
+                  </p>
+                </CardComponent>
+              ) : (
+                <div className="space-y-6">
+                  <CardComponent className="p-6">
+                    <div className="text-center mb-6">
+                      <h3 className="text-lg font-semibold text-muted-foreground mb-2">Current Credit Score</h3>
+                      <div className="text-6xl font-bold bg-gradient-to-r from-purple-600 to-purple-400 bg-clip-text text-transparent">
+                        {creditScores[0]?.score}
+                      </div>
+                      <p className="text-sm text-muted-foreground mt-2">
+                        {creditScores[0]?.provider} • Updated {new Date(creditScores[0]?.recordedAt).toLocaleDateString()}
+                      </p>
+                    </div>
+                    
+                    {creditScores[0]?.suggestions && (
+                      <div className="mt-6 p-4 bg-purple-500/10 rounded-lg">
+                        <h4 className="font-semibold mb-2 text-purple-400">Improvement Suggestions</h4>
+                        <p className="text-sm text-muted-foreground">{creditScores[0].suggestions}</p>
+                      </div>
+                    )}
+                  </CardComponent>
+
+                  <CardComponent className="p-6">
+                    <h3 className="text-lg font-semibold mb-4">Score History</h3>
+                    <div className="space-y-3">
+                      {creditScores.map((score) => (
+                        <div key={score.id} className="flex items-center justify-between p-3 rounded-lg hover-elevate" data-testid={`score-${score.id}`}>
+                          <div>
+                            <div className="font-semibold text-2xl">{score.score}</div>
+                            <div className="text-sm text-muted-foreground">{new Date(score.recordedAt).toLocaleDateString()}</div>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-xs text-muted-foreground">{score.provider}</div>
+                            {score.factors && (
+                              <div className="text-xs text-muted-foreground mt-1">
+                                {score.factors.substring(0, 50)}...
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </CardComponent>
                 </div>
               )}
             </TabsContent>

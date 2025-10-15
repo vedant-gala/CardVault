@@ -9,7 +9,8 @@ import {
   insertSmsMessageSchema,
   insertBillSchema,
   insertPaymentSchema,
-  insertAutopaySettingsSchema
+  insertAutopaySettingsSchema,
+  insertCreditScoreSchema
 } from "@shared/schema";
 import { extractTransactionFromSms, analyzeEmailForCreditCard } from "./openai";
 import { fetchCreditCardEmails } from "./gmail";
@@ -352,6 +353,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } else {
         res.status(404).json({ error: "Autopay settings not found" });
       }
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/credit-scores", async (_req, res) => {
+    const scores = await storage.getCreditScores();
+    res.json(scores);
+  });
+
+  app.get("/api/credit-scores/latest", async (_req, res) => {
+    const score = await storage.getLatestCreditScore();
+    if (score) {
+      res.json(score);
+    } else {
+      res.status(404).json({ error: "No credit scores found" });
+    }
+  });
+
+  app.post("/api/credit-scores", async (req, res) => {
+    try {
+      const scoreData = insertCreditScoreSchema.parse(req.body);
+      const score = await storage.createCreditScore(scoreData);
+      res.json(score);
     } catch (error: any) {
       res.status(400).json({ error: error.message });
     }

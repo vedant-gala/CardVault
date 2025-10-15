@@ -92,6 +92,15 @@ export const autopaySettings = pgTable("autopay_settings", {
   updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
 });
 
+export const creditScores = pgTable("credit_scores", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  score: integer("score").notNull(),
+  provider: varchar("provider", { length: 50 }).notNull().default("CIBIL"),
+  recordedAt: timestamp("recorded_at").notNull().default(sql`now()`),
+  factors: text("factors"),
+  suggestions: text("suggestions"),
+});
+
 export const insertCardSchema = createInsertSchema(cards).omit({ id: true, currentBalance: true });
 export const insertRewardSchema = createInsertSchema(rewards).omit({ id: true, currentProgress: true });
 export const insertTransactionSchema = createInsertSchema(transactions).omit({ id: true, transactionDate: true });
@@ -100,6 +109,7 @@ export const insertSmsMessageSchema = createInsertSchema(smsMessages).omit({ id:
 export const insertBillSchema = createInsertSchema(bills).omit({ id: true, createdAt: true });
 export const insertPaymentSchema = createInsertSchema(payments).omit({ id: true, paymentDate: true });
 export const insertAutopaySettingsSchema = createInsertSchema(autopaySettings).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertCreditScoreSchema = createInsertSchema(creditScores).omit({ id: true, recordedAt: true });
 
 export type Card = typeof cards.$inferSelect;
 export type InsertCard = z.infer<typeof insertCardSchema>;
@@ -117,3 +127,5 @@ export type Payment = typeof payments.$inferSelect;
 export type InsertPayment = z.infer<typeof insertPaymentSchema>;
 export type AutopaySettings = typeof autopaySettings.$inferSelect;
 export type InsertAutopaySettings = z.infer<typeof insertAutopaySettingsSchema>;
+export type CreditScore = typeof creditScores.$inferSelect;
+export type InsertCreditScore = z.infer<typeof insertCreditScoreSchema>;

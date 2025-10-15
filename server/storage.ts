@@ -7,7 +7,8 @@ import {
   type Bill, type InsertBill,
   type Payment, type InsertPayment,
   type AutopaySettings, type InsertAutopaySettings,
-  cards, rewards, transactions, notifications, smsMessages, bills, payments, autopaySettings
+  type CreditScore, type InsertCreditScore,
+  cards, rewards, transactions, notifications, smsMessages, bills, payments, autopaySettings, creditScores
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { db } from "./db";
@@ -51,6 +52,10 @@ export interface IStorage {
   getAutopayByCard(cardId: string): Promise<AutopaySettings | undefined>;
   createAutopaySettings(settings: InsertAutopaySettings): Promise<AutopaySettings>;
   updateAutopaySettings(id: string, settings: Partial<InsertAutopaySettings>): Promise<AutopaySettings | undefined>;
+
+  getCreditScores(): Promise<CreditScore[]>;
+  getLatestCreditScore(): Promise<CreditScore | undefined>;
+  createCreditScore(score: InsertCreditScore): Promise<CreditScore>;
 }
 
 export class MemStorage implements IStorage {
@@ -490,6 +495,23 @@ export class PgStorage implements IStorage {
       .set(settings)
       .where(eq(autopaySettings.id, id))
       .returning();
+    return result[0];
+  }
+
+  async getCreditScores(): Promise<CreditScore[]> {
+    return await db.select().from(creditScores).orderBy(desc(creditScores.recordedAt));
+  }
+
+  async getLatestCreditScore(): Promise<CreditScore | undefined> {
+    const result = await db.select()
+      .from(creditScores)
+      .orderBy(desc(creditScores.recordedAt))
+      .limit(1);
+    return result[0];
+  }
+
+  async createCreditScore(insertScore: InsertCreditScore): Promise<CreditScore> {
+    const result = await db.insert(creditScores).values(insertScore).returning();
     return result[0];
   }
 }
