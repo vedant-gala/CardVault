@@ -194,6 +194,13 @@ export default function Dashboard() {
         });
       }
     },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to generate recommendations. Please try again.",
+        variant: "destructive",
+      });
+    },
   });
 
   const isLoading = cardsLoading || rewardsLoading || transactionsLoading || notificationsLoading;
