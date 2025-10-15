@@ -1,6 +1,6 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Card, Reward, Transaction, Notification, InsertCard, InsertReward, InsertTransaction } from "@shared/schema";
+import { Card, Reward, Transaction, Notification, InsertCard, InsertReward, InsertTransaction, Bill, Payment } from "@shared/schema";
 import { DashboardStats } from "@/components/DashboardStats";
 import { CreditCardDisplay } from "@/components/CreditCardDisplay";
 import { RewardProgressCard } from "@/components/RewardProgressCard";
@@ -10,11 +10,12 @@ import { AddCardDialog } from "@/components/AddCardDialog";
 import { AddRewardDialog } from "@/components/AddRewardDialog";
 import { AddTransactionDialog } from "@/components/AddTransactionDialog";
 import { SmsParsingDialog } from "@/components/SmsParsingDialog";
+import { BillPaymentDialog } from "@/components/BillPaymentDialog";
 import { CardLoadingSkeleton, RewardLoadingSkeleton, TransactionLoadingSkeleton } from "@/components/LoadingSkeleton";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { CreditCard, Gift, Receipt, Bell, Mail, Sparkles } from "lucide-react";
+import { CreditCard, Gift, Receipt, Bell, Mail, Sparkles, FileText } from "lucide-react";
 import { Card as CardComponent } from "@/components/ui/card";
 
 export default function Dashboard() {
@@ -34,6 +35,14 @@ export default function Dashboard() {
 
   const { data: notifications = [], isLoading: notificationsLoading } = useQuery<Notification[]>({
     queryKey: ["/api/notifications"],
+  });
+
+  const { data: bills = [], isLoading: billsLoading } = useQuery<Bill[]>({
+    queryKey: ["/api/bills"],
+  });
+
+  const { data: payments = [], isLoading: paymentsLoading } = useQuery<Payment[]>({
+    queryKey: ["/api/payments"],
   });
 
   const addCardMutation = useMutation({
@@ -137,6 +146,21 @@ export default function Dashboard() {
     },
   });
 
+  const payBillMutation = useMutation({
+    mutationFn: async (payment: { billId: string; cardId: string; amount: string; paymentMethod: string }) => {
+      return await apiRequest("POST", "/api/payments", payment);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/bills"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/payments"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+      toast({
+        title: "Payment Successful",
+        description: "Your bill payment has been processed",
+      });
+    },
+  });
+
   const markAsReadMutation = useMutation({
     mutationFn: async (id: string) => {
       return await apiRequest("PATCH", `/api/notifications/${id}/read`, {});
@@ -168,7 +192,7 @@ export default function Dashboard() {
 
         <div className="mt-12">
           <Tabs defaultValue="cards" className="w-full">
-            <TabsList className="grid w-full grid-cols-4 mb-8">
+            <TabsList className="grid w-full grid-cols-5 mb-8">
               <TabsTrigger value="cards" data-testid="tab-cards">
                 <CreditCard className="w-4 h-4 mr-2" />
                 Cards
@@ -176,6 +200,10 @@ export default function Dashboard() {
               <TabsTrigger value="rewards" data-testid="tab-rewards">
                 <Gift className="w-4 h-4 mr-2" />
                 Rewards
+              </TabsTrigger>
+              <TabsTrigger value="bills" data-testid="tab-bills">
+                <FileText className="w-4 h-4 mr-2" />
+                Bills
               </TabsTrigger>
               <TabsTrigger value="transactions" data-testid="tab-transactions">
                 <Receipt className="w-4 h-4 mr-2" />
@@ -257,6 +285,73 @@ export default function Dashboard() {
                         reward={reward} 
                         cardColor={card?.cardColor ?? undefined}
                       />
+                    );
+                  })}
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="bills" className="space-y-6">
+              <div className="flex items-center justify-between">
+                <h2 className="text-2xl font-bold">Bills & Payments</h2>
+              </div>
+
+              {billsLoading ? (
+                <CardLoadingSkeleton />
+              ) : bills.length === 0 ? (
+                <CardComponent className="p-12 text-center">
+                  <FileText className="w-16 h-16 mx-auto mb-4 text-muted-foreground opacity-50" />
+                  <h3 className="text-xl font-semibold mb-2">No Bills Yet</h3>
+                  <p className="text-muted-foreground">
+                    Bills will appear here when generated for your cards
+                  </p>
+                </CardComponent>
+              ) : (
+                <div className="space-y-4">
+                  {bills.map((bill) => {
+                    const card = cards.find(c => c.id === bill.cardId);
+                    if (!card) return null;
+
+                    return (
+                      <CardComponent key={bill.id} className="p-6" data-testid={`bill-${bill.id}`}>
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-4">
+                              <div>
+                                <h3 className="text-lg font-semibold">{card.cardName} ••••{card.lastFourDigits}</h3>
+                                <p className="text-sm text-muted-foreground">{bill.billMonth}</p>
+                              </div>
+                              <div className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                                bill.status === "paid" 
+                                  ? "bg-green-500/10 text-green-500" 
+                                  : "bg-orange-500/10 text-orange-500"
+                              }`}>
+                                {bill.status === "paid" ? "Paid" : "Pending"}
+                              </div>
+                            </div>
+                            <div className="mt-4 grid grid-cols-3 gap-4">
+                              <div>
+                                <p className="text-xs text-muted-foreground">Total Amount</p>
+                                <p className="text-lg font-bold">₹{Number(bill.amount).toLocaleString()}</p>
+                              </div>
+                              <div>
+                                <p className="text-xs text-muted-foreground">Minimum Due</p>
+                                <p className="text-lg font-semibold">₹{Number(bill.minimumDue).toLocaleString()}</p>
+                              </div>
+                              <div>
+                                <p className="text-xs text-muted-foreground">Due Date</p>
+                                <p className="text-lg font-semibold">{new Date(bill.dueDate).toLocaleDateString()}</p>
+                              </div>
+                            </div>
+                          </div>
+                          <BillPaymentDialog 
+                            bill={bill} 
+                            card={card}
+                            onPay={(payment) => payBillMutation.mutate(payment)}
+                            isLoading={payBillMutation.isPending}
+                          />
+                        </div>
+                      </CardComponent>
                     );
                   })}
                 </div>

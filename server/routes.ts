@@ -6,7 +6,10 @@ import {
   insertRewardSchema, 
   insertTransactionSchema,
   insertNotificationSchema,
-  insertSmsMessageSchema 
+  insertSmsMessageSchema,
+  insertBillSchema,
+  insertPaymentSchema,
+  insertAutopaySettingsSchema
 } from "@shared/schema";
 import { extractTransactionFromSms, analyzeEmailForCreditCard } from "./openai";
 import { fetchCreditCardEmails } from "./gmail";
@@ -234,6 +237,123 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(notification);
     } else {
       res.status(404).json({ error: "Notification not found" });
+    }
+  });
+
+  app.get("/api/bills", async (_req, res) => {
+    const bills = await storage.getBills();
+    res.json(bills);
+  });
+
+  app.get("/api/bills/card/:cardId", async (req, res) => {
+    const bills = await storage.getBillsByCard(req.params.cardId);
+    res.json(bills);
+  });
+
+  app.post("/api/bills", async (req, res) => {
+    try {
+      const billData = insertBillSchema.parse(req.body);
+      const bill = await storage.createBill(billData);
+      
+      const card = await storage.getCard(bill.cardId);
+      if (card) {
+        await storage.createNotification({
+          cardId: bill.cardId,
+          title: "New Bill Generated",
+          message: `Your ${card.cardName} bill of ₹${bill.amount} is due on ${new Date(bill.dueDate).toLocaleDateString()}`,
+          type: "bill",
+          metadata: JSON.stringify({ billId: bill.id })
+        });
+      }
+      
+      res.json(bill);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.patch("/api/bills/:id/status", async (req, res) => {
+    const { status } = req.body;
+    const bill = await storage.updateBillStatus(req.params.id, status);
+    if (bill) {
+      res.json(bill);
+    } else {
+      res.status(404).json({ error: "Bill not found" });
+    }
+  });
+
+  app.get("/api/payments", async (_req, res) => {
+    const payments = await storage.getPayments();
+    res.json(payments);
+  });
+
+  app.get("/api/payments/card/:cardId", async (req, res) => {
+    const payments = await storage.getPaymentsByCard(req.params.cardId);
+    res.json(payments);
+  });
+
+  app.post("/api/payments", async (req, res) => {
+    try {
+      const paymentData = insertPaymentSchema.parse(req.body);
+      const payment = await storage.createPayment(paymentData);
+      
+      await storage.updateBillStatus(payment.billId, "paid");
+      
+      const bill = await storage.getBillsByCard(payment.cardId);
+      const paidBill = bill.find(b => b.id === payment.billId);
+      const card = await storage.getCard(payment.cardId);
+      
+      if (card && paidBill) {
+        await storage.createNotification({
+          cardId: payment.cardId,
+          title: "Payment Successful",
+          message: `Your payment of ₹${payment.amount} for ${card.cardName} has been processed successfully`,
+          type: "payment",
+          metadata: JSON.stringify({ paymentId: payment.id, billId: payment.billId })
+        });
+      }
+      
+      res.json(payment);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/autopay", async (_req, res) => {
+    const settings = await storage.getAutopaySettings();
+    res.json(settings);
+  });
+
+  app.get("/api/autopay/card/:cardId", async (req, res) => {
+    const settings = await storage.getAutopayByCard(req.params.cardId);
+    if (settings) {
+      res.json(settings);
+    } else {
+      res.status(404).json({ error: "Autopay settings not found" });
+    }
+  });
+
+  app.post("/api/autopay", async (req, res) => {
+    try {
+      const autopayData = insertAutopaySettingsSchema.parse(req.body);
+      const settings = await storage.createAutopaySettings(autopayData);
+      res.json(settings);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.patch("/api/autopay/:id", async (req, res) => {
+    try {
+      const updates = req.body;
+      const settings = await storage.updateAutopaySettings(req.params.id, updates);
+      if (settings) {
+        res.json(settings);
+      } else {
+        res.status(404).json({ error: "Autopay settings not found" });
+      }
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
     }
   });
 

@@ -4,11 +4,12 @@
 A Cred-inspired credit card management application with intelligent email/SMS parsing, reward tracking, and automated notifications. Built with React, Express, OpenAI GPT-5, and Gmail API integration.
 
 ## Features
-- **Card Management**: Add, view, and manage multiple credit cards with customizable colors and details
+- **Card Management**: Add, view, delete, and manage multiple credit cards with customizable colors and details
 - **Rewards Tracking**: Configure conditional rewards with threshold-based progress tracking
 - **Transaction Management**: Manual entry or intelligent SMS parsing using OpenAI
 - **Email Integration**: Automated parsing of credit card statements, bills, and offers from Gmail
-- **Smart Notifications**: Bill alerts, reward unlocks, and offer change summaries
+- **Bill Payments**: View bills, track payment status, and make payments with multiple payment methods
+- **Smart Notifications**: Bill alerts, reward unlocks, payment confirmations, and offer change summaries
 - **Beautiful UI**: Cred-inspired dark theme with purple gradients and smooth animations
 
 ## Architecture
@@ -20,10 +21,10 @@ A Cred-inspired credit card management application with intelligent email/SMS pa
 - **Animations**: Framer Motion for smooth transitions and progress indicators
 
 ### Backend (Express + TypeScript)
-- **Storage**: In-memory storage with full CRUD operations
+- **Database**: PostgreSQL (Neon) with Drizzle ORM for data persistence
 - **AI Integration**: OpenAI GPT-5 for transaction extraction and email analysis
 - **Gmail API**: Replit connector for automated email fetching
-- **API Routes**: RESTful endpoints for cards, rewards, transactions, notifications
+- **API Routes**: RESTful endpoints for cards, rewards, transactions, notifications, bills, payments
 
 ## Key User Journeys
 
@@ -57,6 +58,9 @@ A Cred-inspired credit card management application with intelligent email/SMS pa
 
 ## Recent Changes
 - October 15, 2025: Initial implementation with all MVP features
+- Migrated from in-memory storage to PostgreSQL database with full persistence
+- Added card deletion functionality with hover-reveal delete button
+- Implemented bill payment system with payment tracking and status management
 - Integrated OpenAI GPT-5 for intelligent parsing
 - Connected Gmail via Replit connector for email automation
 - Implemented real-time reward threshold tracking
@@ -67,7 +71,7 @@ A Cred-inspired credit card management application with intelligent email/SMS pa
 - **Backend**: Express, Node.js, TypeScript
 - **AI/ML**: OpenAI GPT-5 for NLP tasks
 - **Email**: Gmail API via Replit connector
-- **Storage**: In-memory (MemStorage) for MVP
+- **Database**: PostgreSQL via Neon with Drizzle ORM
 - **Validation**: Zod schemas, React Hook Form
 
 ## Design System
@@ -99,13 +103,28 @@ A Cred-inspired credit card management application with intelligent email/SMS pa
 - `POST /api/parse-emails` - Fetch and parse Gmail emails
 - `PATCH /api/notifications/:id/read` - Mark as read
 
+### Bills & Payments
+- `GET /api/bills` - List all bills
+- `GET /api/bills/card/:cardId` - Get bills for a specific card
+- `POST /api/bills` - Create new bill (auto-generates notification)
+- `PATCH /api/bills/:id/status` - Update bill status
+- `GET /api/payments` - List all payments
+- `GET /api/payments/card/:cardId` - Get payments for a specific card
+- `POST /api/payments` - Make a payment (auto-updates bill status and creates notification)
+- `GET /api/autopay` - List autopay settings
+- `GET /api/autopay/card/:cardId` - Get autopay settings for a card
+- `POST /api/autopay` - Create autopay settings
+- `PATCH /api/autopay/:id` - Update autopay settings
+
 ## Environment Variables
+- `DATABASE_URL` - PostgreSQL connection string (Neon)
 - `OPENAI_API_KEY` - OpenAI API key for GPT-5 access
 - `SESSION_SECRET` - Express session secret
 - Gmail credentials managed via Replit connector
 
 ## Known Limitations
 - **Gmail Integration**: The current Gmail connector has limited OAuth scopes (addon-specific permissions) which don't include the `gmail.readonly` scope needed to list and read user messages. When users click "Check Gmail", they will receive a clear error message explaining that email parsing requires additional permissions. The SMS parsing feature works as a complete alternative for transaction extraction.
+- **Autopay Functionality**: While autopay settings can be created and updated via API, the automated execution logic (scheduler/cron) is not yet implemented. Users can manually pay bills, and autopay infrastructure is ready for future scheduler integration.
 
 ## Development Notes
 - All components use data-testid attributes for testing

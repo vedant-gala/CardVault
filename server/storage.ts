@@ -4,7 +4,10 @@ import {
   type Transaction, type InsertTransaction,
   type Notification, type InsertNotification,
   type SmsMessage, type InsertSmsMessage,
-  cards, rewards, transactions, notifications, smsMessages
+  type Bill, type InsertBill,
+  type Payment, type InsertPayment,
+  type AutopaySettings, type InsertAutopaySettings,
+  cards, rewards, transactions, notifications, smsMessages, bills, payments, autopaySettings
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { db } from "./db";
@@ -33,6 +36,21 @@ export interface IStorage {
   getSmsMessages(): Promise<SmsMessage[]>;
   createSmsMessage(sms: InsertSmsMessage): Promise<SmsMessage>;
   updateSmsProcessed(id: string, extractedData: string): Promise<SmsMessage | undefined>;
+
+  getBills(): Promise<Bill[]>;
+  getBillsByCard(cardId: string): Promise<Bill[]>;
+  createBill(bill: InsertBill): Promise<Bill>;
+  updateBillStatus(id: string, status: string): Promise<Bill | undefined>;
+
+  getPayments(): Promise<Payment[]>;
+  getPaymentsByBill(billId: string): Promise<Payment[]>;
+  getPaymentsByCard(cardId: string): Promise<Payment[]>;
+  createPayment(payment: InsertPayment): Promise<Payment>;
+
+  getAutopaySettings(): Promise<AutopaySettings[]>;
+  getAutopayByCard(cardId: string): Promise<AutopaySettings | undefined>;
+  createAutopaySettings(settings: InsertAutopaySettings): Promise<AutopaySettings>;
+  updateAutopaySettings(id: string, settings: Partial<InsertAutopaySettings>): Promise<AutopaySettings | undefined>;
 }
 
 export class MemStorage implements IStorage {
@@ -41,6 +59,9 @@ export class MemStorage implements IStorage {
   private transactions: Map<string, Transaction>;
   private notifications: Map<string, Notification>;
   private smsMessages: Map<string, SmsMessage>;
+  private bills: Map<string, Bill>;
+  private payments: Map<string, Payment>;
+  private autopaySettings: Map<string, AutopaySettings>;
 
   constructor() {
     this.cards = new Map();
@@ -48,6 +69,9 @@ export class MemStorage implements IStorage {
     this.transactions = new Map();
     this.notifications = new Map();
     this.smsMessages = new Map();
+    this.bills = new Map();
+    this.payments = new Map();
+    this.autopaySettings = new Map();
   }
 
   async getCards(): Promise<Card[]> {
@@ -199,6 +223,104 @@ export class MemStorage implements IStorage {
     }
     return undefined;
   }
+
+  async getBills(): Promise<Bill[]> {
+    return Array.from(this.bills.values()).sort((a, b) => 
+      new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime()
+    );
+  }
+
+  async getBillsByCard(cardId: string): Promise<Bill[]> {
+    return Array.from(this.bills.values())
+      .filter(b => b.cardId === cardId)
+      .sort((a, b) => new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime());
+  }
+
+  async createBill(insertBill: InsertBill): Promise<Bill> {
+    const id = randomUUID();
+    const bill: Bill = { 
+      ...insertBill, 
+      id,
+      status: insertBill.status ?? "pending",
+      createdAt: new Date()
+    };
+    this.bills.set(id, bill);
+    return bill;
+  }
+
+  async updateBillStatus(id: string, status: string): Promise<Bill | undefined> {
+    const bill = this.bills.get(id);
+    if (bill) {
+      bill.status = status;
+      this.bills.set(id, bill);
+      return bill;
+    }
+    return undefined;
+  }
+
+  async getPayments(): Promise<Payment[]> {
+    return Array.from(this.payments.values()).sort((a, b) => 
+      new Date(b.paymentDate).getTime() - new Date(a.paymentDate).getTime()
+    );
+  }
+
+  async getPaymentsByBill(billId: string): Promise<Payment[]> {
+    return Array.from(this.payments.values())
+      .filter(p => p.billId === billId)
+      .sort((a, b) => new Date(b.paymentDate).getTime() - new Date(a.paymentDate).getTime());
+  }
+
+  async getPaymentsByCard(cardId: string): Promise<Payment[]> {
+    return Array.from(this.payments.values())
+      .filter(p => p.cardId === cardId)
+      .sort((a, b) => new Date(b.paymentDate).getTime() - new Date(a.paymentDate).getTime());
+  }
+
+  async createPayment(insertPayment: InsertPayment): Promise<Payment> {
+    const id = randomUUID();
+    const payment: Payment = { 
+      ...insertPayment, 
+      id,
+      status: insertPayment.status ?? "completed",
+      paymentDate: new Date(),
+      transactionId: insertPayment.transactionId ?? null
+    };
+    this.payments.set(id, payment);
+    return payment;
+  }
+
+  async getAutopaySettings(): Promise<AutopaySettings[]> {
+    return Array.from(this.autopaySettings.values());
+  }
+
+  async getAutopayByCard(cardId: string): Promise<AutopaySettings | undefined> {
+    return Array.from(this.autopaySettings.values()).find(a => a.cardId === cardId);
+  }
+
+  async createAutopaySettings(insertSettings: InsertAutopaySettings): Promise<AutopaySettings> {
+    const id = randomUUID();
+    const settings: AutopaySettings = { 
+      ...insertSettings, 
+      id,
+      enabled: insertSettings.enabled ?? false,
+      paymentType: insertSettings.paymentType ?? "minimum",
+      daysBefore: insertSettings.daysBefore ?? 3,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+    this.autopaySettings.set(id, settings);
+    return settings;
+  }
+
+  async updateAutopaySettings(id: string, updates: Partial<InsertAutopaySettings>): Promise<AutopaySettings | undefined> {
+    const settings = this.autopaySettings.get(id);
+    if (settings) {
+      Object.assign(settings, updates, { updatedAt: new Date() });
+      this.autopaySettings.set(id, settings);
+      return settings;
+    }
+    return undefined;
+  }
 }
 
 export class PgStorage implements IStorage {
@@ -296,6 +418,77 @@ export class PgStorage implements IStorage {
     const result = await db.update(smsMessages)
       .set({ processed: true, extractedData })
       .where(eq(smsMessages.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async getBills(): Promise<Bill[]> {
+    return await db.select().from(bills).orderBy(desc(bills.dueDate));
+  }
+
+  async getBillsByCard(cardId: string): Promise<Bill[]> {
+    return await db.select()
+      .from(bills)
+      .where(eq(bills.cardId, cardId))
+      .orderBy(desc(bills.dueDate));
+  }
+
+  async createBill(insertBill: InsertBill): Promise<Bill> {
+    const result = await db.insert(bills).values(insertBill).returning();
+    return result[0];
+  }
+
+  async updateBillStatus(id: string, status: string): Promise<Bill | undefined> {
+    const result = await db.update(bills)
+      .set({ status })
+      .where(eq(bills.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async getPayments(): Promise<Payment[]> {
+    return await db.select().from(payments).orderBy(desc(payments.paymentDate));
+  }
+
+  async getPaymentsByBill(billId: string): Promise<Payment[]> {
+    return await db.select()
+      .from(payments)
+      .where(eq(payments.billId, billId))
+      .orderBy(desc(payments.paymentDate));
+  }
+
+  async getPaymentsByCard(cardId: string): Promise<Payment[]> {
+    return await db.select()
+      .from(payments)
+      .where(eq(payments.cardId, cardId))
+      .orderBy(desc(payments.paymentDate));
+  }
+
+  async createPayment(insertPayment: InsertPayment): Promise<Payment> {
+    const result = await db.insert(payments).values(insertPayment).returning();
+    return result[0];
+  }
+
+  async getAutopaySettings(): Promise<AutopaySettings[]> {
+    return await db.select().from(autopaySettings);
+  }
+
+  async getAutopayByCard(cardId: string): Promise<AutopaySettings | undefined> {
+    const result = await db.select()
+      .from(autopaySettings)
+      .where(eq(autopaySettings.cardId, cardId));
+    return result[0];
+  }
+
+  async createAutopaySettings(insertSettings: InsertAutopaySettings): Promise<AutopaySettings> {
+    const result = await db.insert(autopaySettings).values(insertSettings).returning();
+    return result[0];
+  }
+
+  async updateAutopaySettings(id: string, settings: Partial<InsertAutopaySettings>): Promise<AutopaySettings | undefined> {
+    const result = await db.update(autopaySettings)
+      .set(settings)
+      .where(eq(autopaySettings.id, id))
       .returning();
     return result[0];
   }
