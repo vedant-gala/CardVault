@@ -123,10 +123,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         const rewards = await storage.getRewardsByCard(matchedCard.id);
         for (const reward of rewards) {
-          const newProgress = Number(reward.currentProgress) + Number(extracted.amount);
+          const oldProgress = Number(reward.currentProgress);
+          const newProgress = oldProgress + Number(extracted.amount);
+          const threshold = Number(reward.threshold);
+          
+          console.log(`Reward progress update: ${reward.id}, old: ${oldProgress}, new: ${newProgress}, threshold: ${threshold}`);
+          
           await storage.updateRewardProgress(reward.id, newProgress.toString());
 
-          if (newProgress >= Number(reward.threshold) && Number(reward.currentProgress) < Number(reward.threshold)) {
+          if (newProgress >= threshold && oldProgress < threshold) {
+            console.log(`Creating reward unlock notification for reward ${reward.id}`);
             await storage.createNotification({
               cardId: matchedCard.id,
               title: "Reward Unlocked! 🎉",

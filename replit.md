@@ -104,6 +104,9 @@ A Cred-inspired credit card management application with intelligent email/SMS pa
 - `SESSION_SECRET` - Express session secret
 - Gmail credentials managed via Replit connector
 
+## Known Limitations
+- **Gmail Integration**: The current Gmail connector has limited OAuth scopes (addon-specific permissions) which don't include the `gmail.readonly` scope needed to list and read user messages. When users click "Check Gmail", they will receive a clear error message explaining that email parsing requires additional permissions. The SMS parsing feature works as a complete alternative for transaction extraction.
+
 ## Development Notes
 - All components use data-testid attributes for testing
 - Loading skeletons maintain visual consistency during data fetching

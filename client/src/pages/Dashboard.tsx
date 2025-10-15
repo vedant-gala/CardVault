@@ -69,6 +69,7 @@ export default function Dashboard() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
       queryClient.invalidateQueries({ queryKey: ["/api/rewards"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
       toast({
         title: "Transaction Added",
         description: "Your transaction has been recorded",
@@ -83,6 +84,7 @@ export default function Dashboard() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
       queryClient.invalidateQueries({ queryKey: ["/api/rewards"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
       toast({
         title: "SMS Parsed",
         description: "Transaction extracted and added to your card",
@@ -102,6 +104,22 @@ export default function Dashboard() {
         description: `Found ${data.count || 0} credit card related emails`,
       });
     },
+    onError: (error: any) => {
+      const errorData = error?.response?.data;
+      if (errorData?.scopeError) {
+        toast({
+          title: "Gmail Permissions Required",
+          description: "The Gmail integration needs additional permissions to read emails. Email parsing is currently unavailable.",
+          variant: "destructive"
+        });
+      } else {
+        toast({
+          title: "Error",
+          description: errorData?.error || "Failed to parse emails. Please try again.",
+          variant: "destructive"
+        });
+      }
+    }
   });
 
   const markAsReadMutation = useMutation({
@@ -218,7 +236,7 @@ export default function Dashboard() {
                       <RewardProgressCard 
                         key={reward.id} 
                         reward={reward} 
-                        cardColor={card?.cardColor}
+                        cardColor={card?.cardColor ?? undefined}
                       />
                     );
                   })}
@@ -231,7 +249,9 @@ export default function Dashboard() {
                 <h2 className="text-2xl font-bold">Transactions</h2>
                 <div className="flex items-center gap-2">
                   <SmsParsingDialog 
-                    onParse={(sms) => parsSmsMutation.mutateAsync(sms)}
+                    onParse={async (sms) => {
+                      await parsSmsMutation.mutateAsync(sms);
+                    }}
                     isLoading={parsSmsMutation.isPending}
                   />
                   <AddTransactionDialog 
