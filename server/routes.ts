@@ -195,6 +195,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ success: true, count: processedCount, total: emails.length });
     } catch (error: any) {
       console.error("Error in parse-emails:", error);
+      
+      if (error.message?.includes('insufficient authentication scopes')) {
+        return res.status(403).json({ 
+          error: "Gmail requires additional permissions. The current Gmail connection has limited access. Email parsing is currently unavailable.",
+          scopeError: true
+        });
+      }
+      
       res.status(500).json({ error: error.message || "Failed to parse emails" });
     }
   });
