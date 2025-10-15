@@ -51,6 +51,14 @@ export default {
           foreground: "hsl(var(--destructive-foreground) / <alpha-value>)",
           border: "var(--destructive-border)",
         },
+        success: {
+          DEFAULT: "hsl(142 70% 45%)",
+          foreground: "hsl(142 10% 98%)",
+        },
+        warning: {
+          DEFAULT: "hsl(25 95% 55%)",
+          foreground: "hsl(25 10% 98%)",
+        },
         ring: "hsl(var(--ring) / <alpha-value>)",
         chart: {
           "1": "hsl(var(--chart-1) / <alpha-value>)",
@@ -81,6 +89,10 @@ export default {
           busy: "rgb(239 68 68)",
           offline: "rgb(156 163 175)",
         },
+      },
+      backgroundImage: {
+        'gradient-purple': 'linear-gradient(135deg, hsl(var(--gradient-purple-start)), hsl(var(--gradient-purple-end)))',
+        'gradient-success': 'linear-gradient(135deg, hsl(var(--gradient-success-start)), hsl(var(--gradient-success-end)))',
       },
       fontFamily: {
         sans: ["var(--font-sans)"],
