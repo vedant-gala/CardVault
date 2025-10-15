@@ -10,6 +10,10 @@ A Cred-inspired credit card management application with intelligent email/SMS pa
 - **Email Integration**: Automated parsing of credit card statements, bills, and offers from Gmail
 - **Bill Payments**: View bills, track payment status, and make payments with multiple payment methods
 - **Smart Notifications**: Bill alerts, reward unlocks, payment confirmations, and offer change summaries
+- **Real-Time Push Notifications**: WebSocket-powered instant alerts for transactions and reward unlocks
+- **Credit Score Tracking**: Monitor credit score history with improvement suggestions
+- **Spending Analytics**: Category breakdowns, monthly comparisons, and spending insights
+- **AI-Powered Recommendations**: Personalized credit card offers based on spending patterns
 - **Beautiful UI**: Cred-inspired dark theme with purple gradients and smooth animations
 
 ## Architecture
@@ -22,9 +26,10 @@ A Cred-inspired credit card management application with intelligent email/SMS pa
 
 ### Backend (Express + TypeScript)
 - **Database**: PostgreSQL (Neon) with Drizzle ORM for data persistence
-- **AI Integration**: OpenAI GPT-5 for transaction extraction and email analysis
+- **AI Integration**: OpenAI GPT-5 for transaction extraction, email analysis, and offer recommendations
 - **Gmail API**: Replit connector for automated email fetching
-- **API Routes**: RESTful endpoints for cards, rewards, transactions, notifications, bills, payments
+- **WebSocket**: Real-time push notifications for transactions and reward unlocks
+- **API Routes**: RESTful endpoints for cards, rewards, transactions, notifications, bills, payments, analytics
 
 ## Key User Journeys
 
@@ -57,14 +62,16 @@ A Cred-inspired credit card management application with intelligent email/SMS pa
 5. Notifications created with simple summaries
 
 ## Recent Changes
-- October 15, 2025: Initial implementation with all MVP features
+- October 15, 2025: Completed all 6 core features
 - Migrated from in-memory storage to PostgreSQL database with full persistence
-- Added card deletion functionality with hover-reveal delete button
-- Implemented bill payment system with payment tracking and status management
-- Integrated OpenAI GPT-5 for intelligent parsing
+- Implemented bill payment system with payment tracking, status management, and autopay infrastructure
+- Added credit score tracking with history visualization and improvement suggestions
+- Built spending analytics dashboard with category breakdowns and monthly comparisons
+- Integrated AI-powered offer recommendations using OpenAI GPT-5 based on spending patterns
+- **Implemented WebSocket push notification system for real-time transaction alerts and reward unlocks**
 - Connected Gmail via Replit connector for email automation
-- Implemented real-time reward threshold tracking
-- Added beautiful loading states and error handling
+- Added card deletion functionality with hover-reveal delete button
+- Beautiful loading states, error handling, and Cred-inspired dark theme
 
 ## Technical Stack
 - **Frontend**: React 18, TypeScript, Tailwind CSS, shadcn/ui, Framer Motion

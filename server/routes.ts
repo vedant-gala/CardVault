@@ -14,6 +14,7 @@ import {
 } from "@shared/schema";
 import { extractTransactionFromSms, analyzeEmailForCreditCard, generateOfferRecommendations } from "./openai";
 import { fetchCreditCardEmails } from "./gmail";
+import { setupWebSocket, broadcastNotification } from "./websocket";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   
@@ -62,23 +63,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const transactionData = insertTransactionSchema.parse(req.body);
       const transaction = await storage.createTransaction(transactionData);
 
+      // Broadcast transaction notification
+      const card = await storage.getCard(transaction.cardId);
+      if (card) {
+        const transactionNotif = await storage.createNotification({
+          cardId: transaction.cardId,
+          title: "New Transaction",
+          message: `₹${transaction.amount} spent at ${transaction.merchantName}`,
+          type: "transaction",
+          metadata: JSON.stringify({ transactionId: transaction.id })
+        });
+        broadcastNotification({
+          id: transactionNotif.id,
+          type: transactionNotif.type,
+          title: transactionNotif.title,
+          message: transactionNotif.message,
+          cardId: transactionNotif.cardId || undefined,
+          read: transactionNotif.isRead,
+          createdAt: transactionNotif.createdAt.toISOString(),
+        });
+      }
+
       const rewards = await storage.getRewardsByCard(transaction.cardId);
       for (const reward of rewards) {
         const newProgress = Number(reward.currentProgress) + Number(transaction.amount);
         await storage.updateRewardProgress(reward.id, newProgress.toString());
 
         if (newProgress >= Number(reward.threshold) && Number(reward.currentProgress) < Number(reward.threshold)) {
-          await storage.createNotification({
+          const rewardNotif = await storage.createNotification({
             cardId: transaction.cardId,
             title: "Reward Unlocked! 🎉",
-            message: `You've unlocked ${reward.rewardValue} on your ${(await storage.getCard(transaction.cardId))?.cardName || 'card'}!`,
+            message: `You've unlocked ${reward.rewardValue} on your ${card?.cardName || 'card'}!`,
             type: "reward",
             metadata: JSON.stringify({ rewardId: reward.id })
+          });
+          broadcastNotification({
+            id: rewardNotif.id,
+            type: rewardNotif.type,
+            title: rewardNotif.title,
+            message: rewardNotif.message,
+            cardId: rewardNotif.cardId || undefined,
+            read: rewardNotif.isRead,
+            createdAt: rewardNotif.createdAt.toISOString(),
           });
         }
       }
 
-      const card = await storage.getCard(transaction.cardId);
       if (card) {
         const newBalance = Number(card.currentBalance) + Number(transaction.amount);
         await storage.updateCardBalance(card.id, newBalance.toString());
@@ -125,6 +155,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
           source: "sms"
         });
 
+        // Broadcast transaction notification for SMS-parsed transactions
+        const transactionNotif = await storage.createNotification({
+          cardId: matchedCard.id,
+          title: "New Transaction",
+          message: `₹${transaction.amount} spent at ${transaction.merchantName}`,
+          type: "transaction",
+          metadata: JSON.stringify({ transactionId: transaction.id })
+        });
+        broadcastNotification({
+          id: transactionNotif.id,
+          type: transactionNotif.type,
+          title: transactionNotif.title,
+          message: transactionNotif.message,
+          cardId: transactionNotif.cardId || undefined,
+          read: transactionNotif.isRead,
+          createdAt: transactionNotif.createdAt.toISOString(),
+        });
+
         const rewards = await storage.getRewardsByCard(matchedCard.id);
         for (const reward of rewards) {
           const oldProgress = Number(reward.currentProgress);
@@ -137,12 +185,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
           if (newProgress >= threshold && oldProgress < threshold) {
             console.log(`Creating reward unlock notification for reward ${reward.id}`);
-            await storage.createNotification({
+            const rewardNotif = await storage.createNotification({
               cardId: matchedCard.id,
               title: "Reward Unlocked! 🎉",
               message: `You've unlocked ${reward.rewardValue} on your ${matchedCard.cardName}!`,
               type: "reward",
               metadata: JSON.stringify({ rewardId: reward.id })
+            });
+            broadcastNotification({
+              id: rewardNotif.id,
+              type: rewardNotif.type,
+              title: rewardNotif.title,
+              message: rewardNotif.message,
+              cardId: rewardNotif.cardId || undefined,
+              read: rewardNotif.isRead,
+              createdAt: rewardNotif.createdAt.toISOString(),
             });
           }
         }
@@ -420,6 +477,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   const httpServer = createServer(app);
+  
+  // Setup WebSocket for real-time push notifications
+  setupWebSocket(httpServer);
 
   return httpServer;
 }

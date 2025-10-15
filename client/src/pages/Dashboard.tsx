@@ -16,11 +16,13 @@ import { CardLoadingSkeleton, RewardLoadingSkeleton, TransactionLoadingSkeleton 
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
+import { useWebSocket } from "@/hooks/useWebSocket";
 import { CreditCard, Gift, Receipt, Bell, Mail, Sparkles, FileText, TrendingUp, BarChart3 } from "lucide-react";
 import { Card as CardComponent } from "@/components/ui/card";
 
 export default function Dashboard() {
   const { toast } = useToast();
+  useWebSocket(); // Connect to real-time notifications
   const [recommendations, setRecommendations] = useState<Array<{
     title: string;
     description: string;
