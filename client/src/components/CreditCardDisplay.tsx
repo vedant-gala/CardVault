@@ -1,30 +1,53 @@
 import { Card as CardType } from "@shared/schema";
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { SiVisa, SiMastercard } from "react-icons/si";
-import { CreditCard } from "lucide-react";
+import { CreditCard, Trash2 } from "lucide-react";
 
 interface CreditCardDisplayProps {
   card: CardType;
   onClick?: () => void;
+  onDelete?: (id: string) => void;
 }
 
-export function CreditCardDisplay({ card, onClick }: CreditCardDisplayProps) {
+export function CreditCardDisplay({ card, onClick, onDelete }: CreditCardDisplayProps) {
   const CardNetworkIcon = card.cardNetwork.toLowerCase() === 'visa' ? SiVisa : 
                           card.cardNetwork.toLowerCase() === 'mastercard' ? SiMastercard : 
                           CreditCard;
 
+  const cardColor = card.cardColor || "#8B5CF6";
+
+  const handleDelete = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (onDelete) {
+      onDelete(card.id);
+    }
+  };
+
   return (
     <Card 
-      className="relative overflow-hidden cursor-pointer hover-elevate active-elevate-2 transition-all duration-300"
+      className="relative overflow-hidden cursor-pointer hover-elevate active-elevate-2 transition-all duration-300 group"
       style={{ 
         aspectRatio: '1.586',
-        background: `linear-gradient(135deg, ${card.cardColor}15, ${card.cardColor}30)`,
-        borderColor: `${card.cardColor}50`
+        background: `linear-gradient(135deg, ${cardColor}15, ${cardColor}30)`,
+        borderColor: `${cardColor}50`
       }}
       onClick={onClick}
       data-testid={`card-${card.id}`}
     >
       <div className="absolute inset-0 bg-gradient-purple opacity-10" />
+      
+      {onDelete && (
+        <Button
+          size="icon"
+          variant="ghost"
+          className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-10 bg-destructive/10 hover:bg-destructive/20 text-destructive"
+          onClick={handleDelete}
+          data-testid={`button-delete-card-${card.id}`}
+        >
+          <Trash2 className="w-4 h-4" />
+        </Button>
+      )}
       
       <div className="relative h-full p-6 flex flex-col justify-between">
         <div className="flex items-start justify-between">
@@ -32,7 +55,7 @@ export function CreditCardDisplay({ card, onClick }: CreditCardDisplayProps) {
             {card.bankName}
           </div>
           <div className="w-12 h-12 rounded-full bg-card/50 flex items-center justify-center backdrop-blur-sm">
-            <CardNetworkIcon className="w-6 h-6" style={{ color: card.cardColor }} />
+            <CardNetworkIcon className="w-6 h-6" style={{ color: cardColor }} />
           </div>
         </div>
 

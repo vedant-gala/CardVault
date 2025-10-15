@@ -3,9 +3,12 @@ import {
   type Reward, type InsertReward,
   type Transaction, type InsertTransaction,
   type Notification, type InsertNotification,
-  type SmsMessage, type InsertSmsMessage
+  type SmsMessage, type InsertSmsMessage,
+  cards, rewards, transactions, notifications, smsMessages
 } from "@shared/schema";
 import { randomUUID } from "crypto";
+import { db } from "./db";
+import { eq, desc } from "drizzle-orm";
 
 export interface IStorage {
   getCards(): Promise<Card[]>;
@@ -60,7 +63,10 @@ export class MemStorage implements IStorage {
     const card: Card = { 
       ...insertCard, 
       id,
-      currentBalance: "0"
+      currentBalance: "0",
+      dueDate: insertCard.dueDate ?? null,
+      billingCycle: insertCard.billingCycle ?? null,
+      cardColor: insertCard.cardColor ?? null
     };
     this.cards.set(id, card);
     return card;
@@ -93,7 +99,9 @@ export class MemStorage implements IStorage {
     const reward: Reward = { 
       ...insertReward, 
       id,
-      currentProgress: "0"
+      currentProgress: "0",
+      isActive: insertReward.isActive ?? true,
+      expiryDate: insertReward.expiryDate ?? null
     };
     this.rewards.set(id, reward);
     return reward;
@@ -126,7 +134,9 @@ export class MemStorage implements IStorage {
     const transaction: Transaction = { 
       ...insertTransaction, 
       id,
-      transactionDate: new Date()
+      transactionDate: new Date(),
+      description: insertTransaction.description ?? null,
+      source: insertTransaction.source ?? "manual"
     };
     this.transactions.set(id, transaction);
     return transaction;
@@ -144,7 +154,9 @@ export class MemStorage implements IStorage {
       ...insertNotification, 
       id,
       isRead: false,
-      createdAt: new Date()
+      createdAt: new Date(),
+      cardId: insertNotification.cardId ?? null,
+      metadata: insertNotification.metadata ?? null
     };
     this.notifications.set(id, notification);
     return notification;
@@ -189,4 +201,104 @@ export class MemStorage implements IStorage {
   }
 }
 
-export const storage = new MemStorage();
+export class PgStorage implements IStorage {
+  async getCards(): Promise<Card[]> {
+    return await db.select().from(cards);
+  }
+
+  async getCard(id: string): Promise<Card | undefined> {
+    const result = await db.select().from(cards).where(eq(cards.id, id));
+    return result[0];
+  }
+
+  async createCard(insertCard: InsertCard): Promise<Card> {
+    const result = await db.insert(cards).values(insertCard).returning();
+    return result[0];
+  }
+
+  async deleteCard(id: string): Promise<boolean> {
+    const result = await db.delete(cards).where(eq(cards.id, id)).returning();
+    return result.length > 0;
+  }
+
+  async updateCardBalance(id: string, balance: string): Promise<Card | undefined> {
+    const result = await db.update(cards)
+      .set({ currentBalance: balance })
+      .where(eq(cards.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async getRewards(): Promise<Reward[]> {
+    return await db.select().from(rewards);
+  }
+
+  async getRewardsByCard(cardId: string): Promise<Reward[]> {
+    return await db.select().from(rewards).where(eq(rewards.cardId, cardId));
+  }
+
+  async createReward(insertReward: InsertReward): Promise<Reward> {
+    const result = await db.insert(rewards).values(insertReward).returning();
+    return result[0];
+  }
+
+  async updateRewardProgress(id: string, progress: string): Promise<Reward | undefined> {
+    const result = await db.update(rewards)
+      .set({ currentProgress: progress })
+      .where(eq(rewards.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async getTransactions(): Promise<Transaction[]> {
+    return await db.select().from(transactions).orderBy(desc(transactions.transactionDate));
+  }
+
+  async getTransactionsByCard(cardId: string): Promise<Transaction[]> {
+    return await db.select()
+      .from(transactions)
+      .where(eq(transactions.cardId, cardId))
+      .orderBy(desc(transactions.transactionDate));
+  }
+
+  async createTransaction(insertTransaction: InsertTransaction): Promise<Transaction> {
+    const result = await db.insert(transactions).values(insertTransaction).returning();
+    return result[0];
+  }
+
+  async getNotifications(): Promise<Notification[]> {
+    return await db.select().from(notifications).orderBy(desc(notifications.createdAt));
+  }
+
+  async createNotification(insertNotification: InsertNotification): Promise<Notification> {
+    const result = await db.insert(notifications).values(insertNotification).returning();
+    return result[0];
+  }
+
+  async markNotificationAsRead(id: string): Promise<Notification | undefined> {
+    const result = await db.update(notifications)
+      .set({ isRead: true })
+      .where(eq(notifications.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async getSmsMessages(): Promise<SmsMessage[]> {
+    return await db.select().from(smsMessages);
+  }
+
+  async createSmsMessage(insertSms: InsertSmsMessage): Promise<SmsMessage> {
+    const result = await db.insert(smsMessages).values(insertSms).returning();
+    return result[0];
+  }
+
+  async updateSmsProcessed(id: string, extractedData: string): Promise<SmsMessage | undefined> {
+    const result = await db.update(smsMessages)
+      .set({ processed: true, extractedData })
+      .where(eq(smsMessages.id, id))
+      .returning();
+    return result[0];
+  }
+}
+
+export const storage = new PgStorage();

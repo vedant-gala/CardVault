@@ -122,6 +122,21 @@ export default function Dashboard() {
     }
   });
 
+  const deleteCardMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return await apiRequest("DELETE", `/api/cards/${id}`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/cards"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/rewards"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
+      toast({
+        title: "Card Deleted",
+        description: "The credit card has been removed successfully",
+      });
+    },
+  });
+
   const markAsReadMutation = useMutation({
     mutationFn: async (id: string) => {
       return await apiRequest("PATCH", `/api/notifications/${id}/read`, {});
@@ -197,7 +212,11 @@ export default function Dashboard() {
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {cards.map((card) => (
-                    <CreditCardDisplay key={card.id} card={card} />
+                    <CreditCardDisplay 
+                      key={card.id} 
+                      card={card} 
+                      onDelete={(id) => deleteCardMutation.mutate(id)}
+                    />
                   ))}
                 </div>
               )}
