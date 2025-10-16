@@ -1,12 +1,19 @@
 import { useEffect, useRef } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { queryClient } from '@/lib/queryClient';
+import { useAuth } from '@/hooks/useAuth';
 
 export function useWebSocket() {
   const { toast } = useToast();
+  const { user } = useAuth();
   const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
+    // Only connect if user is authenticated
+    if (!user) {
+      return;
+    }
+
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/ws`;
     
@@ -63,7 +70,7 @@ export function useWebSocket() {
         wsRef.current.close();
       }
     };
-  }, [toast]);
+  }, [toast, user]);
 
   return wsRef.current;
 }

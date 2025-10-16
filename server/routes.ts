@@ -15,10 +15,11 @@ import {
 import { extractTransactionFromSms, analyzeEmailForCreditCard, generateOfferRecommendations } from "./openai";
 import { fetchCreditCardEmails } from "./gmail";
 import { setupWebSocket, broadcastNotification } from "./websocket";
-import { setupAuth, isAuthenticated } from "./replitAuth";
+import { setupAuth, isAuthenticated, getSession } from "./replitAuth";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Setup Replit Auth
+  const sessionMiddleware = getSession();
   await setupAuth(app);
 
   // Auth user route
@@ -40,6 +41,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const cardData = insertCardSchema.parse(req.body);
       const card = await storage.createCard(userId, cardData);
       res.json(card);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.patch("/api/cards/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const updates = insertCardSchema.partial().parse(req.body);
+      const card = await storage.updateCard(req.params.id, userId, updates);
+      if (card) {
+        res.json(card);
+      } else {
+        res.status(404).json({ error: "Card not found" });
+      }
     } catch (error: any) {
       res.status(400).json({ error: error.message });
     }
@@ -67,6 +83,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const rewardData = insertRewardSchema.parse(req.body);
       const reward = await storage.createReward(rewardData, userId);
       res.json(reward);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.patch("/api/rewards/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const updates = insertRewardSchema.partial().parse(req.body);
+      const reward = await storage.updateReward(req.params.id, userId, updates);
+      if (reward) {
+        res.json(reward);
+      } else {
+        res.status(404).json({ error: "Reward not found" });
+      }
     } catch (error: any) {
       res.status(400).json({ error: error.message });
     }
@@ -102,7 +133,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           cardId: transactionNotif.cardId || undefined,
           read: transactionNotif.isRead,
           createdAt: transactionNotif.createdAt.toISOString(),
-        });
+        }, userId);
       }
 
       const rewards = await storage.getRewardsByCard(transaction.cardId, userId);
@@ -136,6 +167,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       res.json(transaction);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.patch("/api/transactions/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const updates = insertTransactionSchema.partial().parse(req.body);
+      const transaction = await storage.updateTransaction(req.params.id, userId, updates);
+      if (transaction) {
+        res.json(transaction);
+      } else {
+        res.status(404).json({ error: "Transaction not found" });
+      }
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/transactions/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const deleted = await storage.deleteTransaction(req.params.id, userId);
+      if (deleted) {
+        res.json({ success: true });
+      } else {
+        res.status(404).json({ error: "Transaction not found" });
+      }
     } catch (error: any) {
       res.status(400).json({ error: error.message });
     }
@@ -193,7 +253,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           cardId: transactionNotif.cardId || undefined,
           read: transactionNotif.isRead,
           createdAt: transactionNotif.createdAt.toISOString(),
-        });
+        }, userId);
 
         const rewards = await storage.getRewardsByCard(matchedCard.id, userId);
         for (const reward of rewards) {
@@ -519,7 +579,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
   
   // Setup WebSocket for real-time push notifications
-  setupWebSocket(httpServer);
+  setupWebSocket(httpServer, sessionMiddleware);
 
   return httpServer;
 }

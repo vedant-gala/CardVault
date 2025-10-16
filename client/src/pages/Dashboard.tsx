@@ -13,6 +13,10 @@ import { AddTransactionDialog } from "@/components/AddTransactionDialog";
 import { SmsParsingDialog } from "@/components/SmsParsingDialog";
 import { BillPaymentDialog } from "@/components/BillPaymentDialog";
 import { AutopaySettingsDialog } from "@/components/AutopaySettingsDialog";
+import { EditCardDialog } from "@/components/EditCardDialog";
+import { EditRewardDialog } from "@/components/EditRewardDialog";
+import { EditTransactionDialog } from "@/components/EditTransactionDialog";
+import { AddCreditScoreDialog } from "@/components/AddCreditScoreDialog";
 import { CardLoadingSkeleton, RewardLoadingSkeleton, TransactionLoadingSkeleton } from "@/components/LoadingSkeleton";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -74,6 +78,19 @@ export default function Dashboard() {
     },
   });
 
+  const editCardMutation = useMutation({
+    mutationFn: async ({ id, updates }: { id: string; updates: Partial<InsertCard> }) => {
+      return await apiRequest("PATCH", `/api/cards/${id}`, updates);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/cards"] });
+      toast({
+        title: "Card Updated",
+        description: "Card details have been updated successfully",
+      });
+    },
+  });
+
   const addRewardMutation = useMutation({
     mutationFn: async (reward: InsertReward) => {
       return await apiRequest("POST", "/api/rewards", reward);
@@ -83,6 +100,19 @@ export default function Dashboard() {
       toast({
         title: "Reward Added",
         description: "The reward has been configured successfully",
+      });
+    },
+  });
+
+  const editRewardMutation = useMutation({
+    mutationFn: async ({ id, updates }: { id: string; updates: Partial<InsertReward> }) => {
+      return await apiRequest("PATCH", `/api/rewards/${id}`, updates);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/rewards"] });
+      toast({
+        title: "Reward Updated",
+        description: "The reward has been updated successfully",
       });
     },
   });
@@ -98,6 +128,32 @@ export default function Dashboard() {
       toast({
         title: "Transaction Added",
         description: "Your transaction has been recorded",
+      });
+    },
+  });
+
+  const editTransactionMutation = useMutation({
+    mutationFn: async ({ id, updates }: { id: string; updates: Partial<InsertTransaction> }) => {
+      return await apiRequest("PATCH", `/api/transactions/${id}`, updates);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
+      toast({
+        title: "Transaction Updated",
+        description: "Transaction has been updated successfully",
+      });
+    },
+  });
+
+  const deleteTransactionMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return await apiRequest("DELETE", `/api/transactions/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
+      toast({
+        title: "Transaction Deleted",
+        description: "Transaction has been removed",
       });
     },
   });
@@ -145,6 +201,19 @@ export default function Dashboard() {
         });
       }
     }
+  });
+
+  const addCreditScoreMutation = useMutation({
+    mutationFn: async (score: InsertCreditScore) => {
+      return await apiRequest("POST", "/api/credit-scores", score);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/credit-scores"] });
+      toast({
+        title: "Credit Score Added",
+        description: "Your credit score has been recorded successfully",
+      });
+    },
   });
 
   const deleteCardMutation = useMutation({
@@ -297,11 +366,18 @@ export default function Dashboard() {
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {cards.map((card) => (
-                    <CreditCardDisplay 
-                      key={card.id} 
-                      card={card} 
-                      onDelete={(id) => deleteCardMutation.mutate(id)}
-                    />
+                    <div key={card.id} className="relative">
+                      <CreditCardDisplay 
+                        card={card} 
+                        onDelete={(id) => deleteCardMutation.mutate(id)}
+                      />
+                      <div className="absolute top-2 right-2 z-20">
+                        <EditCardDialog
+                          card={card}
+                          onEdit={(id, updates) => editCardMutation.mutate({ id, updates })}
+                        />
+                      </div>
+                    </div>
                   ))}
                 </div>
               )}
@@ -310,6 +386,9 @@ export default function Dashboard() {
             <TabsContent value="credit-score" className="space-y-6">
               <div className="flex items-center justify-between">
                 <h2 className="text-2xl font-bold">Credit Score</h2>
+                <AddCreditScoreDialog 
+                  onAdd={(score) => addCreditScoreMutation.mutate(score)} 
+                />
               </div>
 
               {creditScoresLoading ? (
@@ -399,11 +478,19 @@ export default function Dashboard() {
                     {rewards.map((reward) => {
                       const card = cards.find(c => c.id === reward.cardId);
                       return (
-                        <RewardProgressCard 
-                          key={reward.id} 
-                          reward={reward} 
-                          cardColor={card?.cardColor ?? undefined}
-                        />
+                        <div key={reward.id} className="relative">
+                          <RewardProgressCard 
+                            reward={reward} 
+                            cardColor={card?.cardColor ?? undefined}
+                          />
+                          <div className="absolute top-4 right-4 z-10">
+                            <EditRewardDialog
+                              reward={reward}
+                              cards={cards}
+                              onEdit={(id, updates) => editRewardMutation.mutate({ id, updates })}
+                            />
+                          </div>
+                        </div>
                       );
                     })}
                   </div>
@@ -677,7 +764,12 @@ export default function Dashboard() {
               {transactionsLoading ? (
                 <TransactionLoadingSkeleton />
               ) : (
-                <TransactionList transactions={transactions} cards={cards} />
+                <TransactionList 
+                  transactions={transactions} 
+                  cards={cards}
+                  onEdit={(id, updates) => editTransactionMutation.mutate({ id, updates })}
+                  onDelete={(id) => deleteTransactionMutation.mutate(id)}
+                />
               )}
             </TabsContent>
 

@@ -2,15 +2,16 @@ import { Card as CardType } from "@shared/schema";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { SiVisa, SiMastercard } from "react-icons/si";
-import { CreditCard, Trash2 } from "lucide-react";
+import { CreditCard, Trash2, Pencil } from "lucide-react";
 
 interface CreditCardDisplayProps {
   card: CardType;
   onClick?: () => void;
   onDelete?: (id: string) => void;
+  onEdit?: (id: string) => void;
 }
 
-export function CreditCardDisplay({ card, onClick, onDelete }: CreditCardDisplayProps) {
+export function CreditCardDisplay({ card, onClick, onDelete, onEdit }: CreditCardDisplayProps) {
   const CardNetworkIcon = card.cardNetwork.toLowerCase() === 'visa' ? SiVisa : 
                           card.cardNetwork.toLowerCase() === 'mastercard' ? SiMastercard : 
                           CreditCard;
@@ -21,6 +22,13 @@ export function CreditCardDisplay({ card, onClick, onDelete }: CreditCardDisplay
     e.stopPropagation();
     if (onDelete) {
       onDelete(card.id);
+    }
+  };
+
+  const handleEdit = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (onEdit) {
+      onEdit(card.id);
     }
   };
 
@@ -37,17 +45,30 @@ export function CreditCardDisplay({ card, onClick, onDelete }: CreditCardDisplay
     >
       <div className="absolute inset-0 bg-gradient-purple opacity-10" />
       
-      {onDelete && (
-        <Button
-          size="icon"
-          variant="ghost"
-          className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-10 bg-destructive/10 hover:bg-destructive/20 text-destructive"
-          onClick={handleDelete}
-          data-testid={`button-delete-card-${card.id}`}
-        >
-          <Trash2 className="w-4 h-4" />
-        </Button>
-      )}
+      <div className="absolute top-2 right-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+        {onEdit && (
+          <Button
+            size="icon"
+            variant="ghost"
+            className="bg-primary/10 hover:bg-primary/20 text-primary"
+            onClick={handleEdit}
+            data-testid={`button-edit-card-${card.id}`}
+          >
+            <Pencil className="w-4 h-4" />
+          </Button>
+        )}
+        {onDelete && (
+          <Button
+            size="icon"
+            variant="ghost"
+            className="bg-destructive/10 hover:bg-destructive/20 text-destructive"
+            onClick={handleDelete}
+            data-testid={`button-delete-card-${card.id}`}
+          >
+            <Trash2 className="w-4 h-4" />
+          </Button>
+        )}
+      </div>
       
       <div className="relative h-full p-6 flex flex-col justify-between">
         <div className="flex items-start justify-between">

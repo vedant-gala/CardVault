@@ -23,17 +23,21 @@ export interface IStorage {
   getCards(userId: string): Promise<Card[]>;
   getCard(id: string, userId: string): Promise<Card | undefined>;
   createCard(userId: string, card: InsertCard): Promise<Card>;
+  updateCard(id: string, userId: string, updates: Partial<InsertCard>): Promise<Card | undefined>;
   deleteCard(id: string, userId: string): Promise<boolean>;
   updateCardBalance(id: string, userId: string, balance: string): Promise<Card | undefined>;
 
   getRewards(userId: string): Promise<Reward[]>;
   getRewardsByCard(cardId: string, userId: string): Promise<Reward[]>;
   createReward(reward: InsertReward, userId: string): Promise<Reward>;
+  updateReward(id: string, userId: string, updates: Partial<InsertReward>): Promise<Reward | undefined>;
   updateRewardProgress(id: string, userId: string, progress: string): Promise<Reward | undefined>;
 
   getTransactions(userId: string): Promise<Transaction[]>;
   getTransactionsByCard(cardId: string, userId: string): Promise<Transaction[]>;
   createTransaction(transaction: InsertTransaction, userId: string): Promise<Transaction>;
+  updateTransaction(id: string, userId: string, updates: Partial<InsertTransaction>): Promise<Transaction | undefined>;
+  deleteTransaction(id: string, userId: string): Promise<boolean>;
 
   getNotifications(userId: string): Promise<Notification[]>;
   createNotification(notification: InsertNotification, userId: string): Promise<Notification>;
@@ -134,6 +138,16 @@ export class MemStorage implements IStorage {
     return card;
   }
 
+  async updateCard(id: string, userId: string, updates: Partial<InsertCard>): Promise<Card | undefined> {
+    const card = this.cards.get(id);
+    if (card && card.userId === userId) {
+      const updatedCard = { ...card, ...updates };
+      this.cards.set(id, updatedCard);
+      return updatedCard;
+    }
+    return undefined;
+  }
+
   async deleteCard(id: string, userId: string): Promise<boolean> {
     const card = this.cards.get(id);
     if (card && card.userId === userId) {
@@ -183,6 +197,20 @@ export class MemStorage implements IStorage {
     return reward;
   }
 
+  async updateReward(id: string, userId: string, updates: Partial<InsertReward>): Promise<Reward | undefined> {
+    const reward = this.rewards.get(id);
+    if (!reward) {
+      return undefined;
+    }
+    const card = this.cards.get(reward.cardId);
+    if (!card || card.userId !== userId) {
+      return undefined;
+    }
+    const updatedReward = { ...reward, ...updates };
+    this.rewards.set(id, updatedReward);
+    return updatedReward;
+  }
+
   async updateRewardProgress(id: string, userId: string, progress: string): Promise<Reward | undefined> {
     const reward = this.rewards.get(id);
     if (!reward) {
@@ -230,6 +258,33 @@ export class MemStorage implements IStorage {
     };
     this.transactions.set(id, transaction);
     return transaction;
+  }
+
+  async updateTransaction(id: string, userId: string, updates: Partial<InsertTransaction>): Promise<Transaction | undefined> {
+    const transaction = this.transactions.get(id);
+    if (!transaction) {
+      return undefined;
+    }
+    const card = this.cards.get(transaction.cardId);
+    if (!card || card.userId !== userId) {
+      return undefined;
+    }
+    const updated = { ...transaction, ...updates };
+    this.transactions.set(id, updated);
+    return updated;
+  }
+
+  async deleteTransaction(id: string, userId: string): Promise<boolean> {
+    const transaction = this.transactions.get(id);
+    if (!transaction) {
+      return false;
+    }
+    const card = this.cards.get(transaction.cardId);
+    if (!card || card.userId !== userId) {
+      return false;
+    }
+    this.transactions.delete(id);
+    return true;
   }
 
   async getNotifications(userId: string): Promise<Notification[]> {
@@ -427,6 +482,8 @@ export class MemStorage implements IStorage {
       enabled: insertSettings.enabled ?? false,
       paymentType: insertSettings.paymentType ?? "minimum",
       daysBefore: insertSettings.daysBefore ?? 3,
+      fixedAmount: insertSettings.fixedAmount ?? null,
+      paymentMethod: insertSettings.paymentMethod ?? "bank_account",
       createdAt: new Date(),
       updatedAt: new Date()
     };
@@ -512,6 +569,14 @@ export class PgStorage implements IStorage {
     return result[0];
   }
 
+  async updateCard(id: string, userId: string, updates: Partial<InsertCard>): Promise<Card | undefined> {
+    const result = await db.update(cards)
+      .set(updates)
+      .where(and(eq(cards.id, id), eq(cards.userId, userId)))
+      .returning();
+    return result[0];
+  }
+
   async deleteCard(id: string, userId: string): Promise<boolean> {
     const result = await db.delete(cards).where(and(eq(cards.id, id), eq(cards.userId, userId))).returning();
     return result.length > 0;
@@ -557,6 +622,22 @@ export class PgStorage implements IStorage {
       throw new Error("Card not found or unauthorized");
     }
     const result = await db.insert(rewards).values(insertReward).returning();
+    return result[0];
+  }
+
+  async updateReward(id: string, userId: string, updates: Partial<InsertReward>): Promise<Reward | undefined> {
+    const reward = await db.select().from(rewards).where(eq(rewards.id, id));
+    if (!reward[0]) {
+      return undefined;
+    }
+    const card = await db.select().from(cards).where(and(eq(cards.id, reward[0].cardId), eq(cards.userId, userId)));
+    if (!card[0]) {
+      return undefined;
+    }
+    const result = await db.update(rewards)
+      .set(updates)
+      .where(eq(rewards.id, id))
+      .returning();
     return result[0];
   }
 
@@ -612,6 +693,35 @@ export class PgStorage implements IStorage {
     }
     const result = await db.insert(transactions).values(insertTransaction).returning();
     return result[0];
+  }
+
+  async updateTransaction(id: string, userId: string, updates: Partial<InsertTransaction>): Promise<Transaction | undefined> {
+    const transaction = await db.select().from(transactions).where(eq(transactions.id, id));
+    if (!transaction[0]) {
+      return undefined;
+    }
+    const card = await db.select().from(cards).where(and(eq(cards.id, transaction[0].cardId), eq(cards.userId, userId)));
+    if (!card[0]) {
+      return undefined;
+    }
+    const result = await db.update(transactions)
+      .set(updates)
+      .where(eq(transactions.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async deleteTransaction(id: string, userId: string): Promise<boolean> {
+    const transaction = await db.select().from(transactions).where(eq(transactions.id, id));
+    if (!transaction[0]) {
+      return false;
+    }
+    const card = await db.select().from(cards).where(and(eq(cards.id, transaction[0].cardId), eq(cards.userId, userId)));
+    if (!card[0]) {
+      return false;
+    }
+    await db.delete(transactions).where(eq(transactions.id, id));
+    return true;
   }
 
   async getNotifications(userId: string): Promise<Notification[]> {
@@ -793,6 +903,7 @@ export class PgStorage implements IStorage {
         enabled: autopaySettings.enabled,
         paymentType: autopaySettings.paymentType,
         daysBefore: autopaySettings.daysBefore,
+        fixedAmount: autopaySettings.fixedAmount,
         paymentMethod: autopaySettings.paymentMethod,
         createdAt: autopaySettings.createdAt,
         updatedAt: autopaySettings.updatedAt,

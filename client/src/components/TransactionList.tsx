@@ -1,6 +1,7 @@
-import { Transaction, Card as CardType } from "@shared/schema";
+import { Transaction, Card as CardType, type InsertTransaction } from "@shared/schema";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
 import { 
   ShoppingBag, 
@@ -9,12 +10,16 @@ import {
   Fuel, 
   ShoppingCart,
   Zap,
-  DollarSign 
+  DollarSign,
+  Trash2
 } from "lucide-react";
+import { EditTransactionDialog } from "./EditTransactionDialog";
 
 interface TransactionListProps {
   transactions: Transaction[];
   cards: CardType[];
+  onEdit?: (id: string, updates: Partial<InsertTransaction>) => void;
+  onDelete?: (id: string) => void;
 }
 
 const categoryIcons: Record<string, any> = {
@@ -27,7 +32,7 @@ const categoryIcons: Record<string, any> = {
   other: DollarSign,
 };
 
-export function TransactionList({ transactions, cards }: TransactionListProps) {
+export function TransactionList({ transactions, cards, onEdit, onDelete }: TransactionListProps) {
   const groupedTransactions = transactions.reduce((acc, transaction) => {
     const card = cards.find(c => c.id === transaction.cardId);
     const cardName = card?.cardName || "Unknown Card";
@@ -101,6 +106,28 @@ export function TransactionList({ transactions, cards }: TransactionListProps) {
                       </Badge>
                     )}
                   </div>
+
+                  {(onEdit || onDelete) && (
+                    <div className="flex items-center gap-1">
+                      {onEdit && (
+                        <EditTransactionDialog
+                          transaction={transaction}
+                          cards={cards}
+                          onEdit={onEdit}
+                        />
+                      )}
+                      {onDelete && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => onDelete(transaction.id)}
+                          data-testid={`button-delete-transaction-${transaction.id}`}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      )}
+                    </div>
+                  )}
                 </div>
               );
             })}
