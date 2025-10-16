@@ -68,6 +68,13 @@ A Cred-inspired credit card management application with intelligent email/SMS pa
 5. Notifications created with simple summaries
 
 ## Recent Changes
+- October 16, 2025: **Fixed notifications isolation and added missing payments route**
+  - **Notifications User Isolation**: Added userId column to notifications table for proper user scoping
+  - **Query Fix**: Updated getNotifications to support both userId-based and card-based notifications (backwards compatible)
+  - **Ownership Verification**: Enhanced markNotificationAsRead to verify ownership via userId OR cardId
+  - **Missing Route**: Added GET /api/payments/bill/:billId with proper userId authorization
+  - **Bug Fix**: POST /api/notifications now correctly passes userId parameter
+  - All changes tested with e2e playwright tests and architect-approved
 - October 16, 2025: **Completed full CRUD operations and security hardening**
   - **Edit Functionality**: Added EditCardDialog, EditRewardDialog, and EditTransactionDialog components
   - **PATCH Endpoints**: Created /api/cards/:id, /api/rewards/:id, and /api/transactions/:id with Zod validation
