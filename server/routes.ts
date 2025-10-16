@@ -421,8 +421,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/notifications", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
       const notificationData = insertNotificationSchema.parse(req.body);
-      const notification = await storage.createNotification(notificationData);
+      const notification = await storage.createNotification(notificationData, userId);
       res.json(notification);
     } catch (error: any) {
       res.status(400).json({ error: error.message });
@@ -494,6 +495,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/payments/card/:cardId", isAuthenticated, async (req: any, res) => {
     const userId = req.user.claims.sub;
     const payments = await storage.getPaymentsByCard(req.params.cardId, userId);
+    res.json(payments);
+  });
+
+  app.get("/api/payments/bill/:billId", isAuthenticated, async (req: any, res) => {
+    const userId = req.user.claims.sub;
+    const payments = await storage.getPaymentsByBill(req.params.billId, userId);
     res.json(payments);
   });
 

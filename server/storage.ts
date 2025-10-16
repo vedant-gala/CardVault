@@ -13,7 +13,7 @@ import {
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { db } from "./db";
-import { eq, desc, and } from "drizzle-orm";
+import { eq, desc, and, or } from "drizzle-orm";
 
 export interface IStorage {
   // User operations (required for Replit Auth)
@@ -291,7 +291,7 @@ export class MemStorage implements IStorage {
     const userCards = Array.from(this.cards.values()).filter(c => c.userId === userId);
     const userCardIds = new Set(userCards.map(c => c.id));
     return Array.from(this.notifications.values())
-      .filter(n => n.cardId && userCardIds.has(n.cardId))
+      .filter(n => n.userId === userId || (n.cardId && userCardIds.has(n.cardId)))
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }
 
@@ -306,6 +306,7 @@ export class MemStorage implements IStorage {
     const notification: Notification = { 
       ...insertNotification, 
       id,
+      userId,
       isRead: false,
       createdAt: new Date(),
       cardId: insertNotification.cardId ?? null,
@@ -320,9 +321,14 @@ export class MemStorage implements IStorage {
     if (!notification) {
       return undefined;
     }
-    if (notification.cardId) {
-      const card = this.cards.get(notification.cardId);
-      if (!card || card.userId !== userId) {
+    // Verify ownership: either notification.userId matches OR notification's card belongs to user
+    if (notification.userId !== userId) {
+      if (notification.cardId) {
+        const card = this.cards.get(notification.cardId);
+        if (!card || card.userId !== userId) {
+          return undefined;
+        }
+      } else {
         return undefined;
       }
     }
@@ -728,6 +734,7 @@ export class PgStorage implements IStorage {
     return await db
       .select({
         id: notifications.id,
+        userId: notifications.userId,
         cardId: notifications.cardId,
         title: notifications.title,
         message: notifications.message,
@@ -738,7 +745,12 @@ export class PgStorage implements IStorage {
       })
       .from(notifications)
       .leftJoin(cards, eq(notifications.cardId, cards.id))
-      .where(eq(cards.userId, userId))
+      .where(
+        or(
+          eq(notifications.userId, userId),
+          eq(cards.userId, userId)
+        )
+      )
       .orderBy(desc(notifications.createdAt));
   }
 
@@ -749,7 +761,10 @@ export class PgStorage implements IStorage {
         throw new Error("Card not found or unauthorized");
       }
     }
-    const result = await db.insert(notifications).values(insertNotification).returning();
+    const result = await db.insert(notifications).values({
+      ...insertNotification,
+      userId
+    }).returning();
     return result[0];
   }
 
@@ -758,9 +773,15 @@ export class PgStorage implements IStorage {
     if (!notification[0]) {
       return undefined;
     }
-    if (notification[0].cardId) {
-      const card = await db.select().from(cards).where(and(eq(cards.id, notification[0].cardId), eq(cards.userId, userId)));
-      if (!card[0]) {
+    // Verify ownership: either notification.userId matches OR notification's card belongs to user
+    if (notification[0].userId !== userId) {
+      if (notification[0].cardId) {
+        const card = await db.select().from(cards).where(and(eq(cards.id, notification[0].cardId), eq(cards.userId, userId)));
+        if (!card[0]) {
+          return undefined;
+        }
+      } else {
+        // Notification has no userId and no cardId - unauthorized
         return undefined;
       }
     }

@@ -64,6 +64,7 @@ export const transactions = pgTable("transactions", {
 
 export const notifications = pgTable("notifications", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id),
   cardId: varchar("card_id").references(() => cards.id),
   title: text("title").notNull(),
   message: text("message").notNull(),
@@ -129,7 +130,7 @@ export const creditScores = pgTable("credit_scores", {
 export const insertCardSchema = createInsertSchema(cards).omit({ id: true, userId: true, currentBalance: true });
 export const insertRewardSchema = createInsertSchema(rewards).omit({ id: true, currentProgress: true });
 export const insertTransactionSchema = createInsertSchema(transactions).omit({ id: true, transactionDate: true });
-export const insertNotificationSchema = createInsertSchema(notifications).omit({ id: true, createdAt: true });
+export const insertNotificationSchema = createInsertSchema(notifications).omit({ id: true, userId: true, createdAt: true });
 export const insertSmsMessageSchema = createInsertSchema(smsMessages).omit({ id: true, receivedAt: true, processed: true, extractedData: true });
 export const insertBillSchema = createInsertSchema(bills).omit({ id: true, createdAt: true });
 export const insertPaymentSchema = createInsertSchema(payments).omit({ id: true, paymentDate: true });
