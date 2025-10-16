@@ -46,7 +46,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.delete("/api/cards/:id", isAuthenticated, async (req: any, res) => {
-    const deleted = await storage.deleteCard(req.params.id);
+    const userId = req.user.claims.sub;
+    const deleted = await storage.deleteCard(req.params.id, userId);
+    if (!deleted) {
+      res.status(404).json({ error: "Card not found" });
+      return;
+    }
     res.json({ success: deleted });
   });
 
@@ -58,8 +63,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/rewards", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
       const rewardData = insertRewardSchema.parse(req.body);
-      const reward = await storage.createReward(rewardData);
+      const reward = await storage.createReward(rewardData, userId);
       res.json(reward);
     } catch (error: any) {
       res.status(400).json({ error: error.message });
@@ -74,11 +80,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/transactions", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
       const transactionData = insertTransactionSchema.parse(req.body);
-      const transaction = await storage.createTransaction(transactionData);
+      const transaction = await storage.createTransaction(transactionData, userId);
 
       // Broadcast transaction notification
-      const card = await storage.getCard(transaction.cardId);
+      const card = await storage.getCard(transaction.cardId, userId);
       if (card) {
         const transactionNotif = await storage.createNotification({
           cardId: transaction.cardId,
@@ -86,7 +93,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           message: `₹${transaction.amount} spent at ${transaction.merchantName}`,
           type: "transaction",
           metadata: JSON.stringify({ transactionId: transaction.id })
-        });
+        }, userId);
         broadcastNotification({
           id: transactionNotif.id,
           type: transactionNotif.type,
@@ -98,10 +105,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const rewards = await storage.getRewardsByCard(transaction.cardId);
+      const rewards = await storage.getRewardsByCard(transaction.cardId, userId);
       for (const reward of rewards) {
         const newProgress = Number(reward.currentProgress) + Number(transaction.amount);
-        await storage.updateRewardProgress(reward.id, newProgress.toString());
+        await storage.updateRewardProgress(reward.id, userId, newProgress.toString());
 
         if (newProgress >= Number(reward.threshold) && Number(reward.currentProgress) < Number(reward.threshold)) {
           const rewardNotif = await storage.createNotification({
@@ -110,7 +117,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             message: `You've unlocked ${reward.rewardValue} on your ${card?.cardName || 'card'}!`,
             type: "reward",
             metadata: JSON.stringify({ rewardId: reward.id })
-          });
+          }, userId);
           broadcastNotification({
             id: rewardNotif.id,
             type: rewardNotif.type,
@@ -125,7 +132,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (card) {
         const newBalance = Number(card.currentBalance) + Number(transaction.amount);
-        await storage.updateCardBalance(card.id, newBalance.toString());
+        await storage.updateCardBalance(card.id, userId, newBalance.toString());
       }
 
       res.json(transaction);
@@ -168,7 +175,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           category: extracted.category,
           description: extracted.description || `Parsed from SMS: ${smsData.phoneNumber}`,
           source: "sms"
-        });
+        }, userId);
 
         // Broadcast transaction notification for SMS-parsed transactions
         const transactionNotif = await storage.createNotification({
@@ -177,7 +184,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           message: `₹${transaction.amount} spent at ${transaction.merchantName}`,
           type: "transaction",
           metadata: JSON.stringify({ transactionId: transaction.id })
-        });
+        }, userId);
         broadcastNotification({
           id: transactionNotif.id,
           type: transactionNotif.type,
@@ -188,7 +195,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           createdAt: transactionNotif.createdAt.toISOString(),
         });
 
-        const rewards = await storage.getRewardsByCard(matchedCard.id);
+        const rewards = await storage.getRewardsByCard(matchedCard.id, userId);
         for (const reward of rewards) {
           const oldProgress = Number(reward.currentProgress);
           const newProgress = oldProgress + Number(extracted.amount);
@@ -196,7 +203,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           
           console.log(`Reward progress update: ${reward.id}, old: ${oldProgress}, new: ${newProgress}, threshold: ${threshold}`);
           
-          await storage.updateRewardProgress(reward.id, newProgress.toString());
+          await storage.updateRewardProgress(reward.id, userId, newProgress.toString());
 
           if (newProgress >= threshold && oldProgress < threshold) {
             console.log(`Creating reward unlock notification for reward ${reward.id}`);
@@ -206,7 +213,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               message: `You've unlocked ${reward.rewardValue} on your ${matchedCard.cardName}!`,
               type: "reward",
               metadata: JSON.stringify({ rewardId: reward.id })
-            });
+            }, userId);
             broadcastNotification({
               id: rewardNotif.id,
               type: rewardNotif.type,
@@ -220,7 +227,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
 
         const newBalance = Number(matchedCard.currentBalance) + Number(extracted.amount);
-        await storage.updateCardBalance(matchedCard.id, newBalance.toString());
+        await storage.updateCardBalance(matchedCard.id, userId, newBalance.toString());
 
         res.json({ success: true, transaction });
       } else {
@@ -233,6 +240,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/parse-emails", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
       const emails = await fetchCreditCardEmails();
       let processedCount = 0;
 
@@ -265,7 +273,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 changes: analysis.changes,
                 from: email.from
               })
-            });
+            }, userId);
 
             processedCount++;
           }
@@ -306,7 +314,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.patch("/api/notifications/:id/read", isAuthenticated, async (req: any, res) => {
-    const notification = await storage.markNotificationAsRead(req.params.id);
+    const userId = req.user.claims.sub;
+    const notification = await storage.markNotificationAsRead(req.params.id, userId);
     if (notification) {
       res.json(notification);
     } else {
@@ -321,16 +330,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.get("/api/bills/card/:cardId", isAuthenticated, async (req: any, res) => {
-    const bills = await storage.getBillsByCard(req.params.cardId);
+    const userId = req.user.claims.sub;
+    const bills = await storage.getBillsByCard(req.params.cardId, userId);
     res.json(bills);
   });
 
   app.post("/api/bills", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
       const billData = insertBillSchema.parse(req.body);
-      const bill = await storage.createBill(billData);
+      const bill = await storage.createBill(billData, userId);
       
-      const card = await storage.getCard(bill.cardId);
+      const card = await storage.getCard(bill.cardId, userId);
       if (card) {
         await storage.createNotification({
           cardId: bill.cardId,
@@ -338,7 +349,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           message: `Your ${card.cardName} bill of ₹${bill.amount} is due on ${new Date(bill.dueDate).toLocaleDateString()}`,
           type: "bill",
           metadata: JSON.stringify({ billId: bill.id })
-        });
+        }, userId);
       }
       
       res.json(bill);
@@ -348,8 +359,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.patch("/api/bills/:id/status", isAuthenticated, async (req: any, res) => {
+    const userId = req.user.claims.sub;
     const { status } = req.body;
-    const bill = await storage.updateBillStatus(req.params.id, status);
+    const bill = await storage.updateBillStatus(req.params.id, userId, status);
     if (bill) {
       res.json(bill);
     } else {
@@ -364,20 +376,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.get("/api/payments/card/:cardId", isAuthenticated, async (req: any, res) => {
-    const payments = await storage.getPaymentsByCard(req.params.cardId);
+    const userId = req.user.claims.sub;
+    const payments = await storage.getPaymentsByCard(req.params.cardId, userId);
     res.json(payments);
   });
 
   app.post("/api/payments", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
       const paymentData = insertPaymentSchema.parse(req.body);
-      const payment = await storage.createPayment(paymentData);
+      const payment = await storage.createPayment(paymentData, userId);
       
-      await storage.updateBillStatus(payment.billId, "paid");
+      await storage.updateBillStatus(payment.billId, userId, "paid");
       
-      const bill = await storage.getBillsByCard(payment.cardId);
+      const bill = await storage.getBillsByCard(payment.cardId, userId);
       const paidBill = bill.find(b => b.id === payment.billId);
-      const card = await storage.getCard(payment.cardId);
+      const card = await storage.getCard(payment.cardId, userId);
       
       if (card && paidBill) {
         await storage.createNotification({
@@ -386,7 +400,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           message: `Your payment of ₹${payment.amount} for ${card.cardName} has been processed successfully`,
           type: "payment",
           metadata: JSON.stringify({ paymentId: payment.id, billId: payment.billId })
-        });
+        }, userId);
       }
       
       res.json(payment);
@@ -402,7 +416,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.get("/api/autopay/card/:cardId", isAuthenticated, async (req: any, res) => {
-    const settings = await storage.getAutopayByCard(req.params.cardId);
+    const userId = req.user.claims.sub;
+    const settings = await storage.getAutopayByCard(req.params.cardId, userId);
     if (settings) {
       res.json(settings);
     } else {
@@ -412,8 +427,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/autopay", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
       const autopayData = insertAutopaySettingsSchema.parse(req.body);
-      const settings = await storage.createAutopaySettings(autopayData);
+      const settings = await storage.createAutopaySettings(autopayData, userId);
       res.json(settings);
     } catch (error: any) {
       res.status(400).json({ error: error.message });
@@ -422,8 +438,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/autopay/:id", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
       const updates = req.body;
-      const settings = await storage.updateAutopaySettings(req.params.id, updates);
+      const settings = await storage.updateAutopaySettings(req.params.id, userId, updates);
       if (settings) {
         res.json(settings);
       } else {

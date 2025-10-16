@@ -13,7 +13,7 @@ import {
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { db } from "./db";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
 
 export interface IStorage {
   // User operations (required for Replit Auth)
@@ -21,42 +21,42 @@ export interface IStorage {
   upsertUser(user: UpsertUser): Promise<User>;
 
   getCards(userId: string): Promise<Card[]>;
-  getCard(id: string): Promise<Card | undefined>;
+  getCard(id: string, userId: string): Promise<Card | undefined>;
   createCard(userId: string, card: InsertCard): Promise<Card>;
-  deleteCard(id: string): Promise<boolean>;
-  updateCardBalance(id: string, balance: string): Promise<Card | undefined>;
+  deleteCard(id: string, userId: string): Promise<boolean>;
+  updateCardBalance(id: string, userId: string, balance: string): Promise<Card | undefined>;
 
   getRewards(userId: string): Promise<Reward[]>;
-  getRewardsByCard(cardId: string): Promise<Reward[]>;
-  createReward(reward: InsertReward): Promise<Reward>;
-  updateRewardProgress(id: string, progress: string): Promise<Reward | undefined>;
+  getRewardsByCard(cardId: string, userId: string): Promise<Reward[]>;
+  createReward(reward: InsertReward, userId: string): Promise<Reward>;
+  updateRewardProgress(id: string, userId: string, progress: string): Promise<Reward | undefined>;
 
   getTransactions(userId: string): Promise<Transaction[]>;
-  getTransactionsByCard(cardId: string): Promise<Transaction[]>;
-  createTransaction(transaction: InsertTransaction): Promise<Transaction>;
+  getTransactionsByCard(cardId: string, userId: string): Promise<Transaction[]>;
+  createTransaction(transaction: InsertTransaction, userId: string): Promise<Transaction>;
 
   getNotifications(userId: string): Promise<Notification[]>;
-  createNotification(notification: InsertNotification): Promise<Notification>;
-  markNotificationAsRead(id: string): Promise<Notification | undefined>;
+  createNotification(notification: InsertNotification, userId: string): Promise<Notification>;
+  markNotificationAsRead(id: string, userId: string): Promise<Notification | undefined>;
 
   getSmsMessages(): Promise<SmsMessage[]>;
   createSmsMessage(sms: InsertSmsMessage): Promise<SmsMessage>;
   updateSmsProcessed(id: string, extractedData: string): Promise<SmsMessage | undefined>;
 
   getBills(userId: string): Promise<Bill[]>;
-  getBillsByCard(cardId: string): Promise<Bill[]>;
-  createBill(bill: InsertBill): Promise<Bill>;
-  updateBillStatus(id: string, status: string): Promise<Bill | undefined>;
+  getBillsByCard(cardId: string, userId: string): Promise<Bill[]>;
+  createBill(bill: InsertBill, userId: string): Promise<Bill>;
+  updateBillStatus(id: string, userId: string, status: string): Promise<Bill | undefined>;
 
   getPayments(userId: string): Promise<Payment[]>;
-  getPaymentsByBill(billId: string): Promise<Payment[]>;
-  getPaymentsByCard(cardId: string): Promise<Payment[]>;
-  createPayment(payment: InsertPayment): Promise<Payment>;
+  getPaymentsByBill(billId: string, userId: string): Promise<Payment[]>;
+  getPaymentsByCard(cardId: string, userId: string): Promise<Payment[]>;
+  createPayment(payment: InsertPayment, userId: string): Promise<Payment>;
 
   getAutopaySettings(userId: string): Promise<AutopaySettings[]>;
-  getAutopayByCard(cardId: string): Promise<AutopaySettings | undefined>;
-  createAutopaySettings(settings: InsertAutopaySettings): Promise<AutopaySettings>;
-  updateAutopaySettings(id: string, settings: Partial<InsertAutopaySettings>): Promise<AutopaySettings | undefined>;
+  getAutopayByCard(cardId: string, userId: string): Promise<AutopaySettings | undefined>;
+  createAutopaySettings(settings: InsertAutopaySettings, userId: string): Promise<AutopaySettings>;
+  updateAutopaySettings(id: string, userId: string, settings: Partial<InsertAutopaySettings>): Promise<AutopaySettings | undefined>;
 
   getCreditScores(userId: string): Promise<CreditScore[]>;
   getLatestCreditScore(userId: string): Promise<CreditScore | undefined>;
@@ -111,8 +111,12 @@ export class MemStorage implements IStorage {
     return Array.from(this.cards.values()).filter(c => c.userId === userId);
   }
 
-  async getCard(id: string): Promise<Card | undefined> {
-    return this.cards.get(id);
+  async getCard(id: string, userId: string): Promise<Card | undefined> {
+    const card = this.cards.get(id);
+    if (card && card.userId === userId) {
+      return card;
+    }
+    return undefined;
   }
 
   async createCard(userId: string, insertCard: InsertCard): Promise<Card> {
@@ -130,13 +134,17 @@ export class MemStorage implements IStorage {
     return card;
   }
 
-  async deleteCard(id: string): Promise<boolean> {
-    return this.cards.delete(id);
+  async deleteCard(id: string, userId: string): Promise<boolean> {
+    const card = this.cards.get(id);
+    if (card && card.userId === userId) {
+      return this.cards.delete(id);
+    }
+    return false;
   }
 
-  async updateCardBalance(id: string, balance: string): Promise<Card | undefined> {
+  async updateCardBalance(id: string, userId: string, balance: string): Promise<Card | undefined> {
     const card = this.cards.get(id);
-    if (card) {
+    if (card && card.userId === userId) {
       card.currentBalance = balance;
       this.cards.set(id, card);
       return card;
@@ -150,11 +158,19 @@ export class MemStorage implements IStorage {
     return Array.from(this.rewards.values()).filter(r => userCardIds.has(r.cardId));
   }
 
-  async getRewardsByCard(cardId: string): Promise<Reward[]> {
+  async getRewardsByCard(cardId: string, userId: string): Promise<Reward[]> {
+    const card = this.cards.get(cardId);
+    if (!card || card.userId !== userId) {
+      return [];
+    }
     return Array.from(this.rewards.values()).filter(r => r.cardId === cardId);
   }
 
-  async createReward(insertReward: InsertReward): Promise<Reward> {
+  async createReward(insertReward: InsertReward, userId: string): Promise<Reward> {
+    const card = this.cards.get(insertReward.cardId);
+    if (!card || card.userId !== userId) {
+      throw new Error("Card not found or unauthorized");
+    }
     const id = randomUUID();
     const reward: Reward = { 
       ...insertReward, 
@@ -167,14 +183,18 @@ export class MemStorage implements IStorage {
     return reward;
   }
 
-  async updateRewardProgress(id: string, progress: string): Promise<Reward | undefined> {
+  async updateRewardProgress(id: string, userId: string, progress: string): Promise<Reward | undefined> {
     const reward = this.rewards.get(id);
-    if (reward) {
-      reward.currentProgress = progress;
-      this.rewards.set(id, reward);
-      return reward;
+    if (!reward) {
+      return undefined;
     }
-    return undefined;
+    const card = this.cards.get(reward.cardId);
+    if (!card || card.userId !== userId) {
+      return undefined;
+    }
+    reward.currentProgress = progress;
+    this.rewards.set(id, reward);
+    return reward;
   }
 
   async getTransactions(userId: string): Promise<Transaction[]> {
@@ -185,13 +205,21 @@ export class MemStorage implements IStorage {
       .sort((a, b) => new Date(b.transactionDate).getTime() - new Date(a.transactionDate).getTime());
   }
 
-  async getTransactionsByCard(cardId: string): Promise<Transaction[]> {
+  async getTransactionsByCard(cardId: string, userId: string): Promise<Transaction[]> {
+    const card = this.cards.get(cardId);
+    if (!card || card.userId !== userId) {
+      return [];
+    }
     return Array.from(this.transactions.values())
       .filter(t => t.cardId === cardId)
       .sort((a, b) => new Date(b.transactionDate).getTime() - new Date(a.transactionDate).getTime());
   }
 
-  async createTransaction(insertTransaction: InsertTransaction): Promise<Transaction> {
+  async createTransaction(insertTransaction: InsertTransaction, userId: string): Promise<Transaction> {
+    const card = this.cards.get(insertTransaction.cardId);
+    if (!card || card.userId !== userId) {
+      throw new Error("Card not found or unauthorized");
+    }
     const id = randomUUID();
     const transaction: Transaction = { 
       ...insertTransaction, 
@@ -212,7 +240,13 @@ export class MemStorage implements IStorage {
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }
 
-  async createNotification(insertNotification: InsertNotification): Promise<Notification> {
+  async createNotification(insertNotification: InsertNotification, userId: string): Promise<Notification> {
+    if (insertNotification.cardId) {
+      const card = this.cards.get(insertNotification.cardId);
+      if (!card || card.userId !== userId) {
+        throw new Error("Card not found or unauthorized");
+      }
+    }
     const id = randomUUID();
     const notification: Notification = { 
       ...insertNotification, 
@@ -226,14 +260,20 @@ export class MemStorage implements IStorage {
     return notification;
   }
 
-  async markNotificationAsRead(id: string): Promise<Notification | undefined> {
+  async markNotificationAsRead(id: string, userId: string): Promise<Notification | undefined> {
     const notification = this.notifications.get(id);
-    if (notification) {
-      notification.isRead = true;
-      this.notifications.set(id, notification);
-      return notification;
+    if (!notification) {
+      return undefined;
     }
-    return undefined;
+    if (notification.cardId) {
+      const card = this.cards.get(notification.cardId);
+      if (!card || card.userId !== userId) {
+        return undefined;
+      }
+    }
+    notification.isRead = true;
+    this.notifications.set(id, notification);
+    return notification;
   }
 
   async getSmsMessages(): Promise<SmsMessage[]> {
@@ -272,13 +312,21 @@ export class MemStorage implements IStorage {
       .sort((a, b) => new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime());
   }
 
-  async getBillsByCard(cardId: string): Promise<Bill[]> {
+  async getBillsByCard(cardId: string, userId: string): Promise<Bill[]> {
+    const card = this.cards.get(cardId);
+    if (!card || card.userId !== userId) {
+      return [];
+    }
     return Array.from(this.bills.values())
       .filter(b => b.cardId === cardId)
       .sort((a, b) => new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime());
   }
 
-  async createBill(insertBill: InsertBill): Promise<Bill> {
+  async createBill(insertBill: InsertBill, userId: string): Promise<Bill> {
+    const card = this.cards.get(insertBill.cardId);
+    if (!card || card.userId !== userId) {
+      throw new Error("Card not found or unauthorized");
+    }
     const id = randomUUID();
     const bill: Bill = { 
       ...insertBill, 
@@ -290,14 +338,18 @@ export class MemStorage implements IStorage {
     return bill;
   }
 
-  async updateBillStatus(id: string, status: string): Promise<Bill | undefined> {
+  async updateBillStatus(id: string, userId: string, status: string): Promise<Bill | undefined> {
     const bill = this.bills.get(id);
-    if (bill) {
-      bill.status = status;
-      this.bills.set(id, bill);
-      return bill;
+    if (!bill) {
+      return undefined;
     }
-    return undefined;
+    const card = this.cards.get(bill.cardId);
+    if (!card || card.userId !== userId) {
+      return undefined;
+    }
+    bill.status = status;
+    this.bills.set(id, bill);
+    return bill;
   }
 
   async getPayments(userId: string): Promise<Payment[]> {
@@ -308,19 +360,35 @@ export class MemStorage implements IStorage {
       .sort((a, b) => new Date(b.paymentDate).getTime() - new Date(a.paymentDate).getTime());
   }
 
-  async getPaymentsByBill(billId: string): Promise<Payment[]> {
+  async getPaymentsByBill(billId: string, userId: string): Promise<Payment[]> {
+    const bill = this.bills.get(billId);
+    if (!bill) {
+      return [];
+    }
+    const card = this.cards.get(bill.cardId);
+    if (!card || card.userId !== userId) {
+      return [];
+    }
     return Array.from(this.payments.values())
       .filter(p => p.billId === billId)
       .sort((a, b) => new Date(b.paymentDate).getTime() - new Date(a.paymentDate).getTime());
   }
 
-  async getPaymentsByCard(cardId: string): Promise<Payment[]> {
+  async getPaymentsByCard(cardId: string, userId: string): Promise<Payment[]> {
+    const card = this.cards.get(cardId);
+    if (!card || card.userId !== userId) {
+      return [];
+    }
     return Array.from(this.payments.values())
       .filter(p => p.cardId === cardId)
       .sort((a, b) => new Date(b.paymentDate).getTime() - new Date(a.paymentDate).getTime());
   }
 
-  async createPayment(insertPayment: InsertPayment): Promise<Payment> {
+  async createPayment(insertPayment: InsertPayment, userId: string): Promise<Payment> {
+    const card = this.cards.get(insertPayment.cardId);
+    if (!card || card.userId !== userId) {
+      throw new Error("Card not found or unauthorized");
+    }
     const id = randomUUID();
     const payment: Payment = { 
       ...insertPayment, 
@@ -339,11 +407,19 @@ export class MemStorage implements IStorage {
     return Array.from(this.autopaySettings.values()).filter(a => userCardIds.has(a.cardId));
   }
 
-  async getAutopayByCard(cardId: string): Promise<AutopaySettings | undefined> {
+  async getAutopayByCard(cardId: string, userId: string): Promise<AutopaySettings | undefined> {
+    const card = this.cards.get(cardId);
+    if (!card || card.userId !== userId) {
+      return undefined;
+    }
     return Array.from(this.autopaySettings.values()).find(a => a.cardId === cardId);
   }
 
-  async createAutopaySettings(insertSettings: InsertAutopaySettings): Promise<AutopaySettings> {
+  async createAutopaySettings(insertSettings: InsertAutopaySettings, userId: string): Promise<AutopaySettings> {
+    const card = this.cards.get(insertSettings.cardId);
+    if (!card || card.userId !== userId) {
+      throw new Error("Card not found or unauthorized");
+    }
     const id = randomUUID();
     const settings: AutopaySettings = { 
       ...insertSettings, 
@@ -358,14 +434,18 @@ export class MemStorage implements IStorage {
     return settings;
   }
 
-  async updateAutopaySettings(id: string, updates: Partial<InsertAutopaySettings>): Promise<AutopaySettings | undefined> {
+  async updateAutopaySettings(id: string, userId: string, updates: Partial<InsertAutopaySettings>): Promise<AutopaySettings | undefined> {
     const settings = this.autopaySettings.get(id);
-    if (settings) {
-      Object.assign(settings, updates, { updatedAt: new Date() });
-      this.autopaySettings.set(id, settings);
-      return settings;
+    if (!settings) {
+      return undefined;
     }
-    return undefined;
+    const card = this.cards.get(settings.cardId);
+    if (!card || card.userId !== userId) {
+      return undefined;
+    }
+    Object.assign(settings, updates, { updatedAt: new Date() });
+    this.autopaySettings.set(id, settings);
+    return settings;
   }
 
   async getCreditScores(userId: string): Promise<CreditScore[]> {
@@ -422,8 +502,8 @@ export class PgStorage implements IStorage {
     return await db.select().from(cards).where(eq(cards.userId, userId));
   }
 
-  async getCard(id: string): Promise<Card | undefined> {
-    const result = await db.select().from(cards).where(eq(cards.id, id));
+  async getCard(id: string, userId: string): Promise<Card | undefined> {
+    const result = await db.select().from(cards).where(and(eq(cards.id, id), eq(cards.userId, userId)));
     return result[0];
   }
 
@@ -432,15 +512,15 @@ export class PgStorage implements IStorage {
     return result[0];
   }
 
-  async deleteCard(id: string): Promise<boolean> {
-    const result = await db.delete(cards).where(eq(cards.id, id)).returning();
+  async deleteCard(id: string, userId: string): Promise<boolean> {
+    const result = await db.delete(cards).where(and(eq(cards.id, id), eq(cards.userId, userId))).returning();
     return result.length > 0;
   }
 
-  async updateCardBalance(id: string, balance: string): Promise<Card | undefined> {
+  async updateCardBalance(id: string, userId: string, balance: string): Promise<Card | undefined> {
     const result = await db.update(cards)
       .set({ currentBalance: balance })
-      .where(eq(cards.id, id))
+      .where(and(eq(cards.id, id), eq(cards.userId, userId)))
       .returning();
     return result[0];
   }
@@ -463,16 +543,32 @@ export class PgStorage implements IStorage {
       .where(eq(cards.userId, userId));
   }
 
-  async getRewardsByCard(cardId: string): Promise<Reward[]> {
+  async getRewardsByCard(cardId: string, userId: string): Promise<Reward[]> {
+    const card = await db.select().from(cards).where(and(eq(cards.id, cardId), eq(cards.userId, userId)));
+    if (!card[0]) {
+      return [];
+    }
     return await db.select().from(rewards).where(eq(rewards.cardId, cardId));
   }
 
-  async createReward(insertReward: InsertReward): Promise<Reward> {
+  async createReward(insertReward: InsertReward, userId: string): Promise<Reward> {
+    const card = await db.select().from(cards).where(and(eq(cards.id, insertReward.cardId), eq(cards.userId, userId)));
+    if (!card[0]) {
+      throw new Error("Card not found or unauthorized");
+    }
     const result = await db.insert(rewards).values(insertReward).returning();
     return result[0];
   }
 
-  async updateRewardProgress(id: string, progress: string): Promise<Reward | undefined> {
+  async updateRewardProgress(id: string, userId: string, progress: string): Promise<Reward | undefined> {
+    const reward = await db.select().from(rewards).where(eq(rewards.id, id));
+    if (!reward[0]) {
+      return undefined;
+    }
+    const card = await db.select().from(cards).where(and(eq(cards.id, reward[0].cardId), eq(cards.userId, userId)));
+    if (!card[0]) {
+      return undefined;
+    }
     const result = await db.update(rewards)
       .set({ currentProgress: progress })
       .where(eq(rewards.id, id))
@@ -498,14 +594,22 @@ export class PgStorage implements IStorage {
       .orderBy(desc(transactions.transactionDate));
   }
 
-  async getTransactionsByCard(cardId: string): Promise<Transaction[]> {
+  async getTransactionsByCard(cardId: string, userId: string): Promise<Transaction[]> {
+    const card = await db.select().from(cards).where(and(eq(cards.id, cardId), eq(cards.userId, userId)));
+    if (!card[0]) {
+      return [];
+    }
     return await db.select()
       .from(transactions)
       .where(eq(transactions.cardId, cardId))
       .orderBy(desc(transactions.transactionDate));
   }
 
-  async createTransaction(insertTransaction: InsertTransaction): Promise<Transaction> {
+  async createTransaction(insertTransaction: InsertTransaction, userId: string): Promise<Transaction> {
+    const card = await db.select().from(cards).where(and(eq(cards.id, insertTransaction.cardId), eq(cards.userId, userId)));
+    if (!card[0]) {
+      throw new Error("Card not found or unauthorized");
+    }
     const result = await db.insert(transactions).values(insertTransaction).returning();
     return result[0];
   }
@@ -528,12 +632,28 @@ export class PgStorage implements IStorage {
       .orderBy(desc(notifications.createdAt));
   }
 
-  async createNotification(insertNotification: InsertNotification): Promise<Notification> {
+  async createNotification(insertNotification: InsertNotification, userId: string): Promise<Notification> {
+    if (insertNotification.cardId) {
+      const card = await db.select().from(cards).where(and(eq(cards.id, insertNotification.cardId), eq(cards.userId, userId)));
+      if (!card[0]) {
+        throw new Error("Card not found or unauthorized");
+      }
+    }
     const result = await db.insert(notifications).values(insertNotification).returning();
     return result[0];
   }
 
-  async markNotificationAsRead(id: string): Promise<Notification | undefined> {
+  async markNotificationAsRead(id: string, userId: string): Promise<Notification | undefined> {
+    const notification = await db.select().from(notifications).where(eq(notifications.id, id));
+    if (!notification[0]) {
+      return undefined;
+    }
+    if (notification[0].cardId) {
+      const card = await db.select().from(cards).where(and(eq(cards.id, notification[0].cardId), eq(cards.userId, userId)));
+      if (!card[0]) {
+        return undefined;
+      }
+    }
     const result = await db.update(notifications)
       .set({ isRead: true })
       .where(eq(notifications.id, id))
@@ -576,19 +696,35 @@ export class PgStorage implements IStorage {
       .orderBy(desc(bills.dueDate));
   }
 
-  async getBillsByCard(cardId: string): Promise<Bill[]> {
+  async getBillsByCard(cardId: string, userId: string): Promise<Bill[]> {
+    const card = await db.select().from(cards).where(and(eq(cards.id, cardId), eq(cards.userId, userId)));
+    if (!card[0]) {
+      return [];
+    }
     return await db.select()
       .from(bills)
       .where(eq(bills.cardId, cardId))
       .orderBy(desc(bills.dueDate));
   }
 
-  async createBill(insertBill: InsertBill): Promise<Bill> {
+  async createBill(insertBill: InsertBill, userId: string): Promise<Bill> {
+    const card = await db.select().from(cards).where(and(eq(cards.id, insertBill.cardId), eq(cards.userId, userId)));
+    if (!card[0]) {
+      throw new Error("Card not found or unauthorized");
+    }
     const result = await db.insert(bills).values(insertBill).returning();
     return result[0];
   }
 
-  async updateBillStatus(id: string, status: string): Promise<Bill | undefined> {
+  async updateBillStatus(id: string, userId: string, status: string): Promise<Bill | undefined> {
+    const bill = await db.select().from(bills).where(eq(bills.id, id));
+    if (!bill[0]) {
+      return undefined;
+    }
+    const card = await db.select().from(cards).where(and(eq(cards.id, bill[0].cardId), eq(cards.userId, userId)));
+    if (!card[0]) {
+      return undefined;
+    }
     const result = await db.update(bills)
       .set({ status })
       .where(eq(bills.id, id))
@@ -614,21 +750,37 @@ export class PgStorage implements IStorage {
       .orderBy(desc(payments.paymentDate));
   }
 
-  async getPaymentsByBill(billId: string): Promise<Payment[]> {
+  async getPaymentsByBill(billId: string, userId: string): Promise<Payment[]> {
+    const bill = await db.select().from(bills).where(eq(bills.id, billId));
+    if (!bill[0]) {
+      return [];
+    }
+    const card = await db.select().from(cards).where(and(eq(cards.id, bill[0].cardId), eq(cards.userId, userId)));
+    if (!card[0]) {
+      return [];
+    }
     return await db.select()
       .from(payments)
       .where(eq(payments.billId, billId))
       .orderBy(desc(payments.paymentDate));
   }
 
-  async getPaymentsByCard(cardId: string): Promise<Payment[]> {
+  async getPaymentsByCard(cardId: string, userId: string): Promise<Payment[]> {
+    const card = await db.select().from(cards).where(and(eq(cards.id, cardId), eq(cards.userId, userId)));
+    if (!card[0]) {
+      return [];
+    }
     return await db.select()
       .from(payments)
       .where(eq(payments.cardId, cardId))
       .orderBy(desc(payments.paymentDate));
   }
 
-  async createPayment(insertPayment: InsertPayment): Promise<Payment> {
+  async createPayment(insertPayment: InsertPayment, userId: string): Promise<Payment> {
+    const card = await db.select().from(cards).where(and(eq(cards.id, insertPayment.cardId), eq(cards.userId, userId)));
+    if (!card[0]) {
+      throw new Error("Card not found or unauthorized");
+    }
     const result = await db.insert(payments).values(insertPayment).returning();
     return result[0];
   }
@@ -650,19 +802,35 @@ export class PgStorage implements IStorage {
       .where(eq(cards.userId, userId));
   }
 
-  async getAutopayByCard(cardId: string): Promise<AutopaySettings | undefined> {
+  async getAutopayByCard(cardId: string, userId: string): Promise<AutopaySettings | undefined> {
+    const card = await db.select().from(cards).where(and(eq(cards.id, cardId), eq(cards.userId, userId)));
+    if (!card[0]) {
+      return undefined;
+    }
     const result = await db.select()
       .from(autopaySettings)
       .where(eq(autopaySettings.cardId, cardId));
     return result[0];
   }
 
-  async createAutopaySettings(insertSettings: InsertAutopaySettings): Promise<AutopaySettings> {
+  async createAutopaySettings(insertSettings: InsertAutopaySettings, userId: string): Promise<AutopaySettings> {
+    const card = await db.select().from(cards).where(and(eq(cards.id, insertSettings.cardId), eq(cards.userId, userId)));
+    if (!card[0]) {
+      throw new Error("Card not found or unauthorized");
+    }
     const result = await db.insert(autopaySettings).values(insertSettings).returning();
     return result[0];
   }
 
-  async updateAutopaySettings(id: string, settings: Partial<InsertAutopaySettings>): Promise<AutopaySettings | undefined> {
+  async updateAutopaySettings(id: string, userId: string, settings: Partial<InsertAutopaySettings>): Promise<AutopaySettings | undefined> {
+    const autopay = await db.select().from(autopaySettings).where(eq(autopaySettings.id, id));
+    if (!autopay[0]) {
+      return undefined;
+    }
+    const card = await db.select().from(cards).where(and(eq(cards.id, autopay[0].cardId), eq(cards.userId, userId)));
+    if (!card[0]) {
+      return undefined;
+    }
     const result = await db.update(autopaySettings)
       .set(settings)
       .where(eq(autopaySettings.id, id))
