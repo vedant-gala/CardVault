@@ -68,6 +68,13 @@ A Cred-inspired credit card management application with intelligent email/SMS pa
 5. Notifications created with simple summaries
 
 ## Recent Changes
+- October 16, 2025: **Added reward deletion functionality**
+  - **DELETE Endpoint**: Added DELETE /api/rewards/:id with userId ownership verification
+  - **Storage Methods**: Implemented deleteReward in both PgStorage and MemStorage
+  - **UI Enhancement**: Delete button appears on hover next to edit button (no overlap)
+  - **Cache Invalidation**: Properly invalidates rewards query on deletion
+  - **Toast Feedback**: Shows success notification on deletion
+  - All changes tested with e2e playwright tests and architect-approved
 - October 16, 2025: **Fixed notifications isolation and added missing payments route**
   - **Notifications User Isolation**: Added userId column to notifications table for proper user scoping
   - **Query Fix**: Updated getNotifications to support both userId-based and card-based notifications (backwards compatible)
@@ -132,6 +139,7 @@ A Cred-inspired credit card management application with intelligent email/SMS pa
 - `GET /api/rewards` - List all rewards
 - `POST /api/rewards` - Create new reward
 - `PATCH /api/rewards/:id` - Update reward (validates with Zod partial schema)
+- `DELETE /api/rewards/:id` - Delete reward
 
 ### Transactions
 - `GET /api/transactions` - List all transactions
