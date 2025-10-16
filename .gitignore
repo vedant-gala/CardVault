@@ -4,3 +4,28 @@ dist
 server/public
 vite.config.ts.*
 *.tar.gz
+
+# Environment and secrets
+.env
+.env.local
+.env.production
+
+# Replit specific
+.replit
+replit.nix
+.config/
+.cache/
+.upm/
+.breakpoints
+
+# Logs and temp
+logs/
+*.log
+tmp/
+temp/
+/tmp/
+
+# Editor
+.vscode/
+.idea/
+*.swp
