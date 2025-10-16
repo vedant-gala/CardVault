@@ -15,35 +15,48 @@ import {
 import { extractTransactionFromSms, analyzeEmailForCreditCard, generateOfferRecommendations } from "./openai";
 import { fetchCreditCardEmails } from "./gmail";
 import { setupWebSocket, broadcastNotification } from "./websocket";
+import { setupAuth, isAuthenticated } from "./replitAuth";
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Setup Replit Auth
+  await setupAuth(app);
+
+  // Auth user route
+  app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {
+    const userId = req.user.claims.sub;
+    const user = await storage.getUser(userId);
+    res.json(user);
+  });
   
-  app.get("/api/cards", async (_req, res) => {
-    const cards = await storage.getCards();
+  app.get("/api/cards", isAuthenticated, async (req: any, res) => {
+    const userId = req.user.claims.sub;
+    const cards = await storage.getCards(userId);
     res.json(cards);
   });
 
-  app.post("/api/cards", async (req, res) => {
+  app.post("/api/cards", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
       const cardData = insertCardSchema.parse(req.body);
-      const card = await storage.createCard(cardData);
+      const card = await storage.createCard(userId, cardData);
       res.json(card);
     } catch (error: any) {
       res.status(400).json({ error: error.message });
     }
   });
 
-  app.delete("/api/cards/:id", async (req, res) => {
+  app.delete("/api/cards/:id", isAuthenticated, async (req: any, res) => {
     const deleted = await storage.deleteCard(req.params.id);
     res.json({ success: deleted });
   });
 
-  app.get("/api/rewards", async (_req, res) => {
-    const rewards = await storage.getRewards();
+  app.get("/api/rewards", isAuthenticated, async (req: any, res) => {
+    const userId = req.user.claims.sub;
+    const rewards = await storage.getRewards(userId);
     res.json(rewards);
   });
 
-  app.post("/api/rewards", async (req, res) => {
+  app.post("/api/rewards", isAuthenticated, async (req: any, res) => {
     try {
       const rewardData = insertRewardSchema.parse(req.body);
       const reward = await storage.createReward(rewardData);
@@ -53,12 +66,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/transactions", async (_req, res) => {
-    const transactions = await storage.getTransactions();
+  app.get("/api/transactions", isAuthenticated, async (req: any, res) => {
+    const userId = req.user.claims.sub;
+    const transactions = await storage.getTransactions(userId);
     res.json(transactions);
   });
 
-  app.post("/api/transactions", async (req, res) => {
+  app.post("/api/transactions", isAuthenticated, async (req: any, res) => {
     try {
       const transactionData = insertTransactionSchema.parse(req.body);
       const transaction = await storage.createTransaction(transactionData);
@@ -120,8 +134,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/parse-sms", async (req, res) => {
+  app.post("/api/parse-sms", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
       const smsData = insertSmsMessageSchema.parse(req.body);
       const sms = await storage.createSmsMessage(smsData);
 
@@ -136,12 +151,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       let matchedCard = null;
       if (extracted.lastFourDigits) {
-        const cards = await storage.getCards();
+        const cards = await storage.getCards(userId);
         matchedCard = cards.find(c => c.lastFourDigits === extracted.lastFourDigits);
       }
 
       if (!matchedCard) {
-        const cards = await storage.getCards();
+        const cards = await storage.getCards(userId);
         matchedCard = cards[0];
       }
 
@@ -216,7 +231,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/parse-emails", async (_req, res) => {
+  app.post("/api/parse-emails", isAuthenticated, async (req: any, res) => {
     try {
       const emails = await fetchCreditCardEmails();
       let processedCount = 0;
@@ -274,12 +289,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/notifications", async (_req, res) => {
-    const notifications = await storage.getNotifications();
+  app.get("/api/notifications", isAuthenticated, async (req: any, res) => {
+    const userId = req.user.claims.sub;
+    const notifications = await storage.getNotifications(userId);
     res.json(notifications);
   });
 
-  app.post("/api/notifications", async (req, res) => {
+  app.post("/api/notifications", isAuthenticated, async (req: any, res) => {
     try {
       const notificationData = insertNotificationSchema.parse(req.body);
       const notification = await storage.createNotification(notificationData);
@@ -289,7 +305,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/notifications/:id/read", async (req, res) => {
+  app.patch("/api/notifications/:id/read", isAuthenticated, async (req: any, res) => {
     const notification = await storage.markNotificationAsRead(req.params.id);
     if (notification) {
       res.json(notification);
@@ -298,17 +314,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/bills", async (_req, res) => {
-    const bills = await storage.getBills();
+  app.get("/api/bills", isAuthenticated, async (req: any, res) => {
+    const userId = req.user.claims.sub;
+    const bills = await storage.getBills(userId);
     res.json(bills);
   });
 
-  app.get("/api/bills/card/:cardId", async (req, res) => {
+  app.get("/api/bills/card/:cardId", isAuthenticated, async (req: any, res) => {
     const bills = await storage.getBillsByCard(req.params.cardId);
     res.json(bills);
   });
 
-  app.post("/api/bills", async (req, res) => {
+  app.post("/api/bills", isAuthenticated, async (req: any, res) => {
     try {
       const billData = insertBillSchema.parse(req.body);
       const bill = await storage.createBill(billData);
@@ -330,7 +347,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/bills/:id/status", async (req, res) => {
+  app.patch("/api/bills/:id/status", isAuthenticated, async (req: any, res) => {
     const { status } = req.body;
     const bill = await storage.updateBillStatus(req.params.id, status);
     if (bill) {
@@ -340,17 +357,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/payments", async (_req, res) => {
-    const payments = await storage.getPayments();
+  app.get("/api/payments", isAuthenticated, async (req: any, res) => {
+    const userId = req.user.claims.sub;
+    const payments = await storage.getPayments(userId);
     res.json(payments);
   });
 
-  app.get("/api/payments/card/:cardId", async (req, res) => {
+  app.get("/api/payments/card/:cardId", isAuthenticated, async (req: any, res) => {
     const payments = await storage.getPaymentsByCard(req.params.cardId);
     res.json(payments);
   });
 
-  app.post("/api/payments", async (req, res) => {
+  app.post("/api/payments", isAuthenticated, async (req: any, res) => {
     try {
       const paymentData = insertPaymentSchema.parse(req.body);
       const payment = await storage.createPayment(paymentData);
@@ -377,12 +395,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/autopay", async (_req, res) => {
-    const settings = await storage.getAutopaySettings();
+  app.get("/api/autopay", isAuthenticated, async (req: any, res) => {
+    const userId = req.user.claims.sub;
+    const settings = await storage.getAutopaySettings(userId);
     res.json(settings);
   });
 
-  app.get("/api/autopay/card/:cardId", async (req, res) => {
+  app.get("/api/autopay/card/:cardId", isAuthenticated, async (req: any, res) => {
     const settings = await storage.getAutopayByCard(req.params.cardId);
     if (settings) {
       res.json(settings);
@@ -391,7 +410,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/autopay", async (req, res) => {
+  app.post("/api/autopay", isAuthenticated, async (req: any, res) => {
     try {
       const autopayData = insertAutopaySettingsSchema.parse(req.body);
       const settings = await storage.createAutopaySettings(autopayData);
@@ -401,7 +420,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/autopay/:id", async (req, res) => {
+  app.patch("/api/autopay/:id", isAuthenticated, async (req: any, res) => {
     try {
       const updates = req.body;
       const settings = await storage.updateAutopaySettings(req.params.id, updates);
@@ -415,13 +434,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/credit-scores", async (_req, res) => {
-    const scores = await storage.getCreditScores();
+  app.get("/api/credit-scores", isAuthenticated, async (req: any, res) => {
+    const userId = req.user.claims.sub;
+    const scores = await storage.getCreditScores(userId);
     res.json(scores);
   });
 
-  app.get("/api/credit-scores/latest", async (_req, res) => {
-    const score = await storage.getLatestCreditScore();
+  app.get("/api/credit-scores/latest", isAuthenticated, async (req: any, res) => {
+    const userId = req.user.claims.sub;
+    const score = await storage.getLatestCreditScore(userId);
     if (score) {
       res.json(score);
     } else {
@@ -429,20 +450,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/credit-scores", async (req, res) => {
+  app.post("/api/credit-scores", isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
       const scoreData = insertCreditScoreSchema.parse(req.body);
-      const score = await storage.createCreditScore(scoreData);
+      const score = await storage.createCreditScore(userId, scoreData);
       res.json(score);
     } catch (error: any) {
       res.status(400).json({ error: error.message });
     }
   });
 
-  app.post("/api/offer-recommendations", async (req, res) => {
+  app.post("/api/offer-recommendations", isAuthenticated, async (req: any, res) => {
     try {
-      const transactions = await storage.getTransactions();
-      const cards = await storage.getCards();
+      const userId = req.user.claims.sub;
+      const transactions = await storage.getTransactions(userId);
+      const cards = await storage.getCards(userId);
 
       if (transactions.length === 0) {
         return res.json({ recommendations: [] });

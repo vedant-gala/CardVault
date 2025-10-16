@@ -8,29 +8,34 @@ import {
   type Payment, type InsertPayment,
   type AutopaySettings, type InsertAutopaySettings,
   type CreditScore, type InsertCreditScore,
-  cards, rewards, transactions, notifications, smsMessages, bills, payments, autopaySettings, creditScores
+  type User, type UpsertUser,
+  cards, rewards, transactions, notifications, smsMessages, bills, payments, autopaySettings, creditScores, users
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { db } from "./db";
 import { eq, desc } from "drizzle-orm";
 
 export interface IStorage {
-  getCards(): Promise<Card[]>;
+  // User operations (required for Replit Auth)
+  getUser(id: string): Promise<User | undefined>;
+  upsertUser(user: UpsertUser): Promise<User>;
+
+  getCards(userId: string): Promise<Card[]>;
   getCard(id: string): Promise<Card | undefined>;
-  createCard(card: InsertCard): Promise<Card>;
+  createCard(userId: string, card: InsertCard): Promise<Card>;
   deleteCard(id: string): Promise<boolean>;
   updateCardBalance(id: string, balance: string): Promise<Card | undefined>;
 
-  getRewards(): Promise<Reward[]>;
+  getRewards(userId: string): Promise<Reward[]>;
   getRewardsByCard(cardId: string): Promise<Reward[]>;
   createReward(reward: InsertReward): Promise<Reward>;
   updateRewardProgress(id: string, progress: string): Promise<Reward | undefined>;
 
-  getTransactions(): Promise<Transaction[]>;
+  getTransactions(userId: string): Promise<Transaction[]>;
   getTransactionsByCard(cardId: string): Promise<Transaction[]>;
   createTransaction(transaction: InsertTransaction): Promise<Transaction>;
 
-  getNotifications(): Promise<Notification[]>;
+  getNotifications(userId: string): Promise<Notification[]>;
   createNotification(notification: InsertNotification): Promise<Notification>;
   markNotificationAsRead(id: string): Promise<Notification | undefined>;
 
@@ -38,27 +43,28 @@ export interface IStorage {
   createSmsMessage(sms: InsertSmsMessage): Promise<SmsMessage>;
   updateSmsProcessed(id: string, extractedData: string): Promise<SmsMessage | undefined>;
 
-  getBills(): Promise<Bill[]>;
+  getBills(userId: string): Promise<Bill[]>;
   getBillsByCard(cardId: string): Promise<Bill[]>;
   createBill(bill: InsertBill): Promise<Bill>;
   updateBillStatus(id: string, status: string): Promise<Bill | undefined>;
 
-  getPayments(): Promise<Payment[]>;
+  getPayments(userId: string): Promise<Payment[]>;
   getPaymentsByBill(billId: string): Promise<Payment[]>;
   getPaymentsByCard(cardId: string): Promise<Payment[]>;
   createPayment(payment: InsertPayment): Promise<Payment>;
 
-  getAutopaySettings(): Promise<AutopaySettings[]>;
+  getAutopaySettings(userId: string): Promise<AutopaySettings[]>;
   getAutopayByCard(cardId: string): Promise<AutopaySettings | undefined>;
   createAutopaySettings(settings: InsertAutopaySettings): Promise<AutopaySettings>;
   updateAutopaySettings(id: string, settings: Partial<InsertAutopaySettings>): Promise<AutopaySettings | undefined>;
 
-  getCreditScores(): Promise<CreditScore[]>;
-  getLatestCreditScore(): Promise<CreditScore | undefined>;
-  createCreditScore(score: InsertCreditScore): Promise<CreditScore>;
+  getCreditScores(userId: string): Promise<CreditScore[]>;
+  getLatestCreditScore(userId: string): Promise<CreditScore | undefined>;
+  createCreditScore(userId: string, score: InsertCreditScore): Promise<CreditScore>;
 }
 
 export class MemStorage implements IStorage {
+  private users: Map<string, User>;
   private cards: Map<string, Card>;
   private rewards: Map<string, Reward>;
   private transactions: Map<string, Transaction>;
@@ -67,8 +73,10 @@ export class MemStorage implements IStorage {
   private bills: Map<string, Bill>;
   private payments: Map<string, Payment>;
   private autopaySettings: Map<string, AutopaySettings>;
+  private creditScores: Map<string, CreditScore>;
 
   constructor() {
+    this.users = new Map();
     this.cards = new Map();
     this.rewards = new Map();
     this.transactions = new Map();
@@ -77,20 +85,41 @@ export class MemStorage implements IStorage {
     this.bills = new Map();
     this.payments = new Map();
     this.autopaySettings = new Map();
+    this.creditScores = new Map();
   }
 
-  async getCards(): Promise<Card[]> {
-    return Array.from(this.cards.values());
+  async getUser(id: string): Promise<User | undefined> {
+    return this.users.get(id);
+  }
+
+  async upsertUser(userData: UpsertUser): Promise<User> {
+    const existing = this.users.get(userData.id!);
+    const user: User = {
+      id: userData.id!,
+      email: userData.email ?? null,
+      firstName: userData.firstName ?? null,
+      lastName: userData.lastName ?? null,
+      profileImageUrl: userData.profileImageUrl ?? null,
+      createdAt: existing?.createdAt ?? new Date(),
+      updatedAt: new Date(),
+    };
+    this.users.set(userData.id!, user);
+    return user;
+  }
+
+  async getCards(userId: string): Promise<Card[]> {
+    return Array.from(this.cards.values()).filter(c => c.userId === userId);
   }
 
   async getCard(id: string): Promise<Card | undefined> {
     return this.cards.get(id);
   }
 
-  async createCard(insertCard: InsertCard): Promise<Card> {
+  async createCard(userId: string, insertCard: InsertCard): Promise<Card> {
     const id = randomUUID();
     const card: Card = { 
-      ...insertCard, 
+      ...insertCard,
+      userId,
       id,
       currentBalance: "0",
       dueDate: insertCard.dueDate ?? null,
@@ -115,8 +144,10 @@ export class MemStorage implements IStorage {
     return undefined;
   }
 
-  async getRewards(): Promise<Reward[]> {
-    return Array.from(this.rewards.values());
+  async getRewards(userId: string): Promise<Reward[]> {
+    const userCards = Array.from(this.cards.values()).filter(c => c.userId === userId);
+    const userCardIds = new Set(userCards.map(c => c.id));
+    return Array.from(this.rewards.values()).filter(r => userCardIds.has(r.cardId));
   }
 
   async getRewardsByCard(cardId: string): Promise<Reward[]> {
@@ -146,10 +177,12 @@ export class MemStorage implements IStorage {
     return undefined;
   }
 
-  async getTransactions(): Promise<Transaction[]> {
-    return Array.from(this.transactions.values()).sort((a, b) => 
-      new Date(b.transactionDate).getTime() - new Date(a.transactionDate).getTime()
-    );
+  async getTransactions(userId: string): Promise<Transaction[]> {
+    const userCards = Array.from(this.cards.values()).filter(c => c.userId === userId);
+    const userCardIds = new Set(userCards.map(c => c.id));
+    return Array.from(this.transactions.values())
+      .filter(t => userCardIds.has(t.cardId))
+      .sort((a, b) => new Date(b.transactionDate).getTime() - new Date(a.transactionDate).getTime());
   }
 
   async getTransactionsByCard(cardId: string): Promise<Transaction[]> {
@@ -171,10 +204,12 @@ export class MemStorage implements IStorage {
     return transaction;
   }
 
-  async getNotifications(): Promise<Notification[]> {
-    return Array.from(this.notifications.values()).sort((a, b) => 
-      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    );
+  async getNotifications(userId: string): Promise<Notification[]> {
+    const userCards = Array.from(this.cards.values()).filter(c => c.userId === userId);
+    const userCardIds = new Set(userCards.map(c => c.id));
+    return Array.from(this.notifications.values())
+      .filter(n => n.cardId && userCardIds.has(n.cardId))
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }
 
   async createNotification(insertNotification: InsertNotification): Promise<Notification> {
@@ -229,10 +264,12 @@ export class MemStorage implements IStorage {
     return undefined;
   }
 
-  async getBills(): Promise<Bill[]> {
-    return Array.from(this.bills.values()).sort((a, b) => 
-      new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime()
-    );
+  async getBills(userId: string): Promise<Bill[]> {
+    const userCards = Array.from(this.cards.values()).filter(c => c.userId === userId);
+    const userCardIds = new Set(userCards.map(c => c.id));
+    return Array.from(this.bills.values())
+      .filter(b => userCardIds.has(b.cardId))
+      .sort((a, b) => new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime());
   }
 
   async getBillsByCard(cardId: string): Promise<Bill[]> {
@@ -263,10 +300,12 @@ export class MemStorage implements IStorage {
     return undefined;
   }
 
-  async getPayments(): Promise<Payment[]> {
-    return Array.from(this.payments.values()).sort((a, b) => 
-      new Date(b.paymentDate).getTime() - new Date(a.paymentDate).getTime()
-    );
+  async getPayments(userId: string): Promise<Payment[]> {
+    const userCards = Array.from(this.cards.values()).filter(c => c.userId === userId);
+    const userCardIds = new Set(userCards.map(c => c.id));
+    return Array.from(this.payments.values())
+      .filter(p => userCardIds.has(p.cardId))
+      .sort((a, b) => new Date(b.paymentDate).getTime() - new Date(a.paymentDate).getTime());
   }
 
   async getPaymentsByBill(billId: string): Promise<Payment[]> {
@@ -294,8 +333,10 @@ export class MemStorage implements IStorage {
     return payment;
   }
 
-  async getAutopaySettings(): Promise<AutopaySettings[]> {
-    return Array.from(this.autopaySettings.values());
+  async getAutopaySettings(userId: string): Promise<AutopaySettings[]> {
+    const userCards = Array.from(this.cards.values()).filter(c => c.userId === userId);
+    const userCardIds = new Set(userCards.map(c => c.id));
+    return Array.from(this.autopaySettings.values()).filter(a => userCardIds.has(a.cardId));
   }
 
   async getAutopayByCard(cardId: string): Promise<AutopaySettings | undefined> {
@@ -326,11 +367,59 @@ export class MemStorage implements IStorage {
     }
     return undefined;
   }
+
+  async getCreditScores(userId: string): Promise<CreditScore[]> {
+    return Array.from(this.creditScores.values())
+      .filter(cs => cs.userId === userId)
+      .sort((a, b) => new Date(b.recordedAt).getTime() - new Date(a.recordedAt).getTime());
+  }
+
+  async getLatestCreditScore(userId: string): Promise<CreditScore | undefined> {
+    const scores = Array.from(this.creditScores.values())
+      .filter(cs => cs.userId === userId)
+      .sort((a, b) => new Date(b.recordedAt).getTime() - new Date(a.recordedAt).getTime());
+    return scores[0];
+  }
+
+  async createCreditScore(userId: string, insertScore: InsertCreditScore): Promise<CreditScore> {
+    const id = randomUUID();
+    const creditScore: CreditScore = {
+      ...insertScore,
+      userId,
+      id,
+      provider: insertScore.provider ?? "CIBIL",
+      recordedAt: new Date(),
+      factors: insertScore.factors ?? null,
+      suggestions: insertScore.suggestions ?? null,
+    };
+    this.creditScores.set(id, creditScore);
+    return creditScore;
+  }
 }
 
 export class PgStorage implements IStorage {
-  async getCards(): Promise<Card[]> {
-    return await db.select().from(cards);
+  async getUser(id: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user;
+  }
+
+  async upsertUser(userData: UpsertUser): Promise<User> {
+    const [user] = await db
+      .insert(users)
+      .values(userData)
+      .onConflictDoUpdate({
+        target: users.id,
+        set: {
+          ...userData,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
+    return user;
+  }
+
+  async getCards(userId: string): Promise<Card[]> {
+    return await db.select().from(cards).where(eq(cards.userId, userId));
   }
 
   async getCard(id: string): Promise<Card | undefined> {
@@ -338,8 +427,8 @@ export class PgStorage implements IStorage {
     return result[0];
   }
 
-  async createCard(insertCard: InsertCard): Promise<Card> {
-    const result = await db.insert(cards).values(insertCard).returning();
+  async createCard(userId: string, insertCard: InsertCard): Promise<Card> {
+    const result = await db.insert(cards).values({ ...insertCard, userId }).returning();
     return result[0];
   }
 
@@ -356,8 +445,22 @@ export class PgStorage implements IStorage {
     return result[0];
   }
 
-  async getRewards(): Promise<Reward[]> {
-    return await db.select().from(rewards);
+  async getRewards(userId: string): Promise<Reward[]> {
+    return await db
+      .select({ 
+        id: rewards.id,
+        cardId: rewards.cardId,
+        rewardType: rewards.rewardType,
+        rewardValue: rewards.rewardValue,
+        condition: rewards.condition,
+        threshold: rewards.threshold,
+        currentProgress: rewards.currentProgress,
+        isActive: rewards.isActive,
+        expiryDate: rewards.expiryDate,
+      })
+      .from(rewards)
+      .innerJoin(cards, eq(rewards.cardId, cards.id))
+      .where(eq(cards.userId, userId));
   }
 
   async getRewardsByCard(cardId: string): Promise<Reward[]> {
@@ -377,8 +480,22 @@ export class PgStorage implements IStorage {
     return result[0];
   }
 
-  async getTransactions(): Promise<Transaction[]> {
-    return await db.select().from(transactions).orderBy(desc(transactions.transactionDate));
+  async getTransactions(userId: string): Promise<Transaction[]> {
+    return await db
+      .select({
+        id: transactions.id,
+        cardId: transactions.cardId,
+        merchantName: transactions.merchantName,
+        amount: transactions.amount,
+        category: transactions.category,
+        transactionDate: transactions.transactionDate,
+        description: transactions.description,
+        source: transactions.source,
+      })
+      .from(transactions)
+      .innerJoin(cards, eq(transactions.cardId, cards.id))
+      .where(eq(cards.userId, userId))
+      .orderBy(desc(transactions.transactionDate));
   }
 
   async getTransactionsByCard(cardId: string): Promise<Transaction[]> {
@@ -393,8 +510,22 @@ export class PgStorage implements IStorage {
     return result[0];
   }
 
-  async getNotifications(): Promise<Notification[]> {
-    return await db.select().from(notifications).orderBy(desc(notifications.createdAt));
+  async getNotifications(userId: string): Promise<Notification[]> {
+    return await db
+      .select({
+        id: notifications.id,
+        cardId: notifications.cardId,
+        title: notifications.title,
+        message: notifications.message,
+        type: notifications.type,
+        isRead: notifications.isRead,
+        createdAt: notifications.createdAt,
+        metadata: notifications.metadata,
+      })
+      .from(notifications)
+      .leftJoin(cards, eq(notifications.cardId, cards.id))
+      .where(eq(cards.userId, userId))
+      .orderBy(desc(notifications.createdAt));
   }
 
   async createNotification(insertNotification: InsertNotification): Promise<Notification> {
@@ -427,8 +558,22 @@ export class PgStorage implements IStorage {
     return result[0];
   }
 
-  async getBills(): Promise<Bill[]> {
-    return await db.select().from(bills).orderBy(desc(bills.dueDate));
+  async getBills(userId: string): Promise<Bill[]> {
+    return await db
+      .select({
+        id: bills.id,
+        cardId: bills.cardId,
+        amount: bills.amount,
+        dueDate: bills.dueDate,
+        billMonth: bills.billMonth,
+        minimumDue: bills.minimumDue,
+        status: bills.status,
+        createdAt: bills.createdAt,
+      })
+      .from(bills)
+      .innerJoin(cards, eq(bills.cardId, cards.id))
+      .where(eq(cards.userId, userId))
+      .orderBy(desc(bills.dueDate));
   }
 
   async getBillsByCard(cardId: string): Promise<Bill[]> {
@@ -451,8 +596,22 @@ export class PgStorage implements IStorage {
     return result[0];
   }
 
-  async getPayments(): Promise<Payment[]> {
-    return await db.select().from(payments).orderBy(desc(payments.paymentDate));
+  async getPayments(userId: string): Promise<Payment[]> {
+    return await db
+      .select({
+        id: payments.id,
+        billId: payments.billId,
+        cardId: payments.cardId,
+        amount: payments.amount,
+        paymentDate: payments.paymentDate,
+        paymentMethod: payments.paymentMethod,
+        status: payments.status,
+        transactionId: payments.transactionId,
+      })
+      .from(payments)
+      .innerJoin(cards, eq(payments.cardId, cards.id))
+      .where(eq(cards.userId, userId))
+      .orderBy(desc(payments.paymentDate));
   }
 
   async getPaymentsByBill(billId: string): Promise<Payment[]> {
@@ -474,8 +633,21 @@ export class PgStorage implements IStorage {
     return result[0];
   }
 
-  async getAutopaySettings(): Promise<AutopaySettings[]> {
-    return await db.select().from(autopaySettings);
+  async getAutopaySettings(userId: string): Promise<AutopaySettings[]> {
+    return await db
+      .select({
+        id: autopaySettings.id,
+        cardId: autopaySettings.cardId,
+        enabled: autopaySettings.enabled,
+        paymentType: autopaySettings.paymentType,
+        daysBefore: autopaySettings.daysBefore,
+        paymentMethod: autopaySettings.paymentMethod,
+        createdAt: autopaySettings.createdAt,
+        updatedAt: autopaySettings.updatedAt,
+      })
+      .from(autopaySettings)
+      .innerJoin(cards, eq(autopaySettings.cardId, cards.id))
+      .where(eq(cards.userId, userId));
   }
 
   async getAutopayByCard(cardId: string): Promise<AutopaySettings | undefined> {
@@ -498,20 +670,26 @@ export class PgStorage implements IStorage {
     return result[0];
   }
 
-  async getCreditScores(): Promise<CreditScore[]> {
-    return await db.select().from(creditScores).orderBy(desc(creditScores.recordedAt));
+  async getCreditScores(userId: string): Promise<CreditScore[]> {
+    return await db
+      .select()
+      .from(creditScores)
+      .where(eq(creditScores.userId, userId))
+      .orderBy(desc(creditScores.recordedAt));
   }
 
-  async getLatestCreditScore(): Promise<CreditScore | undefined> {
-    const result = await db.select()
+  async getLatestCreditScore(userId: string): Promise<CreditScore | undefined> {
+    const result = await db
+      .select()
       .from(creditScores)
+      .where(eq(creditScores.userId, userId))
       .orderBy(desc(creditScores.recordedAt))
       .limit(1);
     return result[0];
   }
 
-  async createCreditScore(insertScore: InsertCreditScore): Promise<CreditScore> {
-    const result = await db.insert(creditScores).values(insertScore).returning();
+  async createCreditScore(userId: string, insertScore: InsertCreditScore): Promise<CreditScore> {
+    const result = await db.insert(creditScores).values({ ...insertScore, userId }).returning();
     return result[0];
   }
 }

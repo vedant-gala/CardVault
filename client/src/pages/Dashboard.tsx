@@ -17,11 +17,13 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { useWebSocket } from "@/hooks/useWebSocket";
-import { CreditCard, Gift, Receipt, Bell, Mail, Sparkles, FileText, TrendingUp, BarChart3 } from "lucide-react";
+import { useAuth } from "@/hooks/useAuth";
+import { CreditCard, Gift, Receipt, Bell, Mail, Sparkles, FileText, TrendingUp, BarChart3, LogOut } from "lucide-react";
 import { Card as CardComponent } from "@/components/ui/card";
 
 export default function Dashboard() {
   const { toast } = useToast();
+  const { user } = useAuth();
   useWebSocket(); // Connect to real-time notifications
   const [recommendations, setRecommendations] = useState<Array<{
     title: string;
@@ -211,7 +213,18 @@ export default function Dashboard() {
     <div className="min-h-screen bg-background">
       <div className="bg-gradient-purple py-12 px-4">
         <div className="max-w-7xl mx-auto">
-          <h1 className="text-4xl md:text-5xl font-bold text-white mb-2">CardVault</h1>
+          <div className="flex justify-between items-center mb-2">
+            <h1 className="text-4xl md:text-5xl font-bold text-white">CardVault</h1>
+            <Button
+              variant="outline"
+              className="text-white border-white/30 hover:bg-white/10"
+              onClick={() => window.location.href = "/api/logout"}
+              data-testid="button-logout"
+            >
+              <LogOut className="w-4 h-4 mr-2" />
+              Logout
+            </Button>
+          </div>
           <p className="text-lg text-white/90">
             Smart credit card management with intelligent rewards tracking
           </p>
