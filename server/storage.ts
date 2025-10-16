@@ -9,11 +9,12 @@ import {
   type AutopaySettings, type InsertAutopaySettings,
   type CreditScore, type InsertCreditScore,
   type User, type UpsertUser,
+  type TransactionQueryParams, type PaginatedTransactions,
   cards, rewards, transactions, notifications, smsMessages, bills, payments, autopaySettings, creditScores, users
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { db } from "./db";
-import { eq, desc, and, or } from "drizzle-orm";
+import { eq, desc, and, or, sql, asc, gte, lte, inArray, like } from "drizzle-orm";
 
 export interface IStorage {
   // User operations (required for Replit Auth)
@@ -36,6 +37,7 @@ export interface IStorage {
 
   getTransactions(userId: string): Promise<Transaction[]>;
   getTransactionsByCard(cardId: string, userId: string): Promise<Transaction[]>;
+  queryTransactions(userId: string, params: TransactionQueryParams): Promise<PaginatedTransactions>;
   createTransaction(transaction: InsertTransaction, userId: string): Promise<Transaction>;
   updateTransaction(id: string, userId: string, updates: Partial<InsertTransaction>): Promise<Transaction | undefined>;
   deleteTransaction(id: string, userId: string): Promise<boolean>;
@@ -255,6 +257,104 @@ export class MemStorage implements IStorage {
     return Array.from(this.transactions.values())
       .filter(t => t.cardId === cardId)
       .sort((a, b) => new Date(b.transactionDate).getTime() - new Date(a.transactionDate).getTime());
+  }
+
+  async queryTransactions(userId: string, params: TransactionQueryParams): Promise<PaginatedTransactions> {
+    const { filters = {}, sortBy = 'transactionDate', sortOrder = 'desc', page = 1, pageSize = 50 } = params;
+    
+    // Get user's cards
+    const userCards = Array.from(this.cards.values()).filter(c => c.userId === userId);
+    const userCardIds = new Set(userCards.map(c => c.id));
+    
+    // Get all user's transactions
+    let filteredTransactions = Array.from(this.transactions.values())
+      .filter(t => userCardIds.has(t.cardId));
+    
+    // Apply filters
+    if (filters.search) {
+      const searchLower = filters.search.toLowerCase();
+      filteredTransactions = filteredTransactions.filter(t =>
+        t.merchantName.toLowerCase().includes(searchLower) ||
+        (t.description && t.description.toLowerCase().includes(searchLower))
+      );
+    }
+    
+    if (filters.cardIds && filters.cardIds.length > 0) {
+      filteredTransactions = filteredTransactions.filter(t => filters.cardIds!.includes(t.cardId));
+    }
+    
+    if (filters.categories && filters.categories.length > 0) {
+      filteredTransactions = filteredTransactions.filter(t => filters.categories!.includes(t.category));
+    }
+    
+    if (filters.sources && filters.sources.length > 0) {
+      filteredTransactions = filteredTransactions.filter(t => filters.sources!.includes(t.source));
+    }
+    
+    if (filters.dateFrom) {
+      const fromDate = new Date(filters.dateFrom);
+      filteredTransactions = filteredTransactions.filter(t => new Date(t.transactionDate) >= fromDate);
+    }
+    
+    if (filters.dateTo) {
+      const toDate = new Date(filters.dateTo);
+      filteredTransactions = filteredTransactions.filter(t => new Date(t.transactionDate) <= toDate);
+    }
+    
+    if (filters.amountMin !== undefined) {
+      filteredTransactions = filteredTransactions.filter(t => Number(t.amount) >= filters.amountMin!);
+    }
+    
+    if (filters.amountMax !== undefined) {
+      filteredTransactions = filteredTransactions.filter(t => Number(t.amount) <= filters.amountMax!);
+    }
+    
+    // Sort
+    filteredTransactions.sort((a, b) => {
+      let aVal: any, bVal: any;
+      
+      switch (sortBy) {
+        case 'transactionDate':
+          aVal = new Date(a.transactionDate).getTime();
+          bVal = new Date(b.transactionDate).getTime();
+          break;
+        case 'amount':
+          aVal = Number(a.amount);
+          bVal = Number(b.amount);
+          break;
+        case 'merchantName':
+          aVal = a.merchantName.toLowerCase();
+          bVal = b.merchantName.toLowerCase();
+          break;
+        case 'category':
+          aVal = a.category.toLowerCase();
+          bVal = b.category.toLowerCase();
+          break;
+        default:
+          aVal = new Date(a.transactionDate).getTime();
+          bVal = new Date(b.transactionDate).getTime();
+      }
+      
+      if (sortOrder === 'asc') {
+        return aVal > bVal ? 1 : aVal < bVal ? -1 : 0;
+      } else {
+        return aVal < bVal ? 1 : aVal > bVal ? -1 : 0;
+      }
+    });
+    
+    // Paginate
+    const total = filteredTransactions.length;
+    const totalPages = Math.ceil(total / pageSize);
+    const offset = (page - 1) * pageSize;
+    const paginatedTransactions = filteredTransactions.slice(offset, offset + pageSize);
+    
+    return {
+      transactions: paginatedTransactions,
+      total,
+      page,
+      pageSize,
+      totalPages,
+    };
   }
 
   async createTransaction(insertTransaction: InsertTransaction, userId: string): Promise<Transaction> {
@@ -717,6 +817,96 @@ export class PgStorage implements IStorage {
       .from(transactions)
       .where(eq(transactions.cardId, cardId))
       .orderBy(desc(transactions.transactionDate));
+  }
+
+  async queryTransactions(userId: string, params: TransactionQueryParams): Promise<PaginatedTransactions> {
+    const { filters = {}, sortBy = 'transactionDate', sortOrder = 'desc', page = 1, pageSize = 50 } = params;
+    
+    // Build WHERE conditions
+    const conditions: any[] = [eq(cards.userId, userId)];
+    
+    // Search filter (searches merchant name and description)
+    if (filters.search) {
+      const searchTerm = `%${filters.search}%`;
+      conditions.push(
+        or(
+          like(transactions.merchantName, searchTerm),
+          like(transactions.description, searchTerm)
+        )
+      );
+    }
+    
+    // Card filter
+    if (filters.cardIds && filters.cardIds.length > 0) {
+      conditions.push(inArray(transactions.cardId, filters.cardIds));
+    }
+    
+    // Category filter
+    if (filters.categories && filters.categories.length > 0) {
+      conditions.push(inArray(transactions.category, filters.categories));
+    }
+    
+    // Source filter
+    if (filters.sources && filters.sources.length > 0) {
+      conditions.push(inArray(transactions.source, filters.sources));
+    }
+    
+    // Date range filter
+    if (filters.dateFrom) {
+      conditions.push(gte(transactions.transactionDate, new Date(filters.dateFrom)));
+    }
+    if (filters.dateTo) {
+      conditions.push(lte(transactions.transactionDate, new Date(filters.dateTo)));
+    }
+    
+    // Amount range filter
+    if (filters.amountMin !== undefined) {
+      conditions.push(gte(transactions.amount, filters.amountMin.toString()));
+    }
+    if (filters.amountMax !== undefined) {
+      conditions.push(lte(transactions.amount, filters.amountMax.toString()));
+    }
+    
+    // Get total count
+    const countResult = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(transactions)
+      .innerJoin(cards, eq(transactions.cardId, cards.id))
+      .where(and(...conditions));
+    
+    const total = Number(countResult[0]?.count || 0);
+    
+    // Build ORDER BY
+    const orderByColumn = transactions[sortBy];
+    const orderByFn = sortOrder === 'asc' ? asc : desc;
+    
+    // Get paginated results
+    const offset = (page - 1) * pageSize;
+    const results = await db
+      .select({
+        id: transactions.id,
+        cardId: transactions.cardId,
+        merchantName: transactions.merchantName,
+        amount: transactions.amount,
+        category: transactions.category,
+        transactionDate: transactions.transactionDate,
+        description: transactions.description,
+        source: transactions.source,
+      })
+      .from(transactions)
+      .innerJoin(cards, eq(transactions.cardId, cards.id))
+      .where(and(...conditions))
+      .orderBy(orderByFn(orderByColumn))
+      .limit(pageSize)
+      .offset(offset);
+    
+    return {
+      transactions: results,
+      total,
+      page,
+      pageSize,
+      totalPages: Math.ceil(total / pageSize),
+    };
   }
 
   async createTransaction(insertTransaction: InsertTransaction, userId: string): Promise<Transaction> {

@@ -60,7 +60,13 @@ export const transactions = pgTable("transactions", {
   transactionDate: timestamp("transaction_date").notNull().default(sql`now()`),
   description: text("description"),
   source: varchar("source", { length: 10 }).notNull().default("manual"),
-});
+}, (table) => [
+  index("idx_transactions_card_id").on(table.cardId),
+  index("idx_transactions_date").on(table.transactionDate),
+  index("idx_transactions_category").on(table.category),
+  index("idx_transactions_source").on(table.source),
+  index("idx_transactions_merchant_name").on(table.merchantName),
+]);
 
 export const notifications = pgTable("notifications", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -157,3 +163,34 @@ export type CreditScore = typeof creditScores.$inferSelect;
 export type InsertCreditScore = z.infer<typeof insertCreditScoreSchema>;
 export type User = typeof users.$inferSelect;
 export type UpsertUser = typeof users.$inferInsert;
+
+// Transaction filter and pagination types
+export interface TransactionFilters {
+  search?: string;
+  cardIds?: string[];
+  categories?: string[];
+  sources?: string[];
+  dateFrom?: string;
+  dateTo?: string;
+  amountMin?: number;
+  amountMax?: number;
+}
+
+export type TransactionSortField = 'transactionDate' | 'amount' | 'merchantName' | 'category';
+export type SortOrder = 'asc' | 'desc';
+
+export interface TransactionQueryParams {
+  filters?: TransactionFilters;
+  sortBy?: TransactionSortField;
+  sortOrder?: SortOrder;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface PaginatedTransactions {
+  transactions: Transaction[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}

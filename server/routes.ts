@@ -119,6 +119,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(transactions);
   });
 
+  app.post("/api/transactions/query", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const queryParams = req.body;
+      const result = await storage.queryTransactions(userId, queryParams);
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   app.post("/api/transactions", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;

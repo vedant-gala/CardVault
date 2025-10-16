@@ -1,12 +1,14 @@
-import { useState } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Card, Reward, Transaction, Notification, InsertCard, InsertReward, InsertTransaction, Bill, Payment, CreditScore, InsertCreditScore } from "@shared/schema";
+import { Card, Reward, Transaction, Notification, InsertCard, InsertReward, InsertTransaction, Bill, Payment, CreditScore, InsertCreditScore, type PaginatedTransactions, type TransactionQueryParams } from "@shared/schema";
 import { DashboardStats } from "@/components/DashboardStats";
 import { CreditCardDisplay } from "@/components/CreditCardDisplay";
 import { RewardProgressCard } from "@/components/RewardProgressCard";
 import { TransactionList } from "@/components/TransactionList";
 import { NotificationPanel } from "@/components/NotificationPanel";
+import { TransactionFilters, type TransactionFilterState } from "@/components/TransactionFilters";
+import { TransactionPagination } from "@/components/TransactionPagination";
 import { AddCardDialog } from "@/components/AddCardDialog";
 import { AddRewardDialog } from "@/components/AddRewardDialog";
 import { AddTransactionDialog } from "@/components/AddTransactionDialog";
@@ -37,6 +39,22 @@ export default function Dashboard() {
     estimatedSavings: string;
   }>>([]);
 
+  // Transaction filter and pagination state
+  const [transactionFilters, setTransactionFilters] = useState<TransactionFilterState>({
+    search: '',
+    cardIds: [],
+    categories: [],
+    sources: [],
+    dateFrom: undefined,
+    dateTo: undefined,
+    amountMin: undefined,
+    amountMax: undefined,
+    sortBy: 'transactionDate',
+    sortOrder: 'desc',
+  });
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+
   const { data: cards = [], isLoading: cardsLoading } = useQuery<Card[]>({
     queryKey: ["/api/cards"],
   });
@@ -48,6 +66,45 @@ export default function Dashboard() {
   const { data: transactions = [], isLoading: transactionsLoading } = useQuery<Transaction[]>({
     queryKey: ["/api/transactions"],
   });
+
+  // Filtered and paginated transactions query
+  const queryParams: TransactionQueryParams = useMemo(() => ({
+    filters: {
+      search: transactionFilters.search || undefined,
+      cardIds: transactionFilters.cardIds.length > 0 ? transactionFilters.cardIds : undefined,
+      categories: transactionFilters.categories.length > 0 ? transactionFilters.categories : undefined,
+      sources: transactionFilters.sources.length > 0 ? transactionFilters.sources : undefined,
+      dateFrom: transactionFilters.dateFrom?.toISOString(),
+      dateTo: transactionFilters.dateTo?.toISOString(),
+      amountMin: transactionFilters.amountMin,
+      amountMax: transactionFilters.amountMax,
+    },
+    sortBy: transactionFilters.sortBy,
+    sortOrder: transactionFilters.sortOrder,
+    page: currentPage,
+    pageSize: pageSize,
+  }), [transactionFilters, currentPage, pageSize]);
+
+  const { data: paginatedTransactions, isLoading: paginatedTransactionsLoading } = useQuery<PaginatedTransactions>({
+    queryKey: ["/api/transactions/query", queryParams],
+    queryFn: async () => {
+      return await apiRequest("POST", "/api/transactions/query", queryParams);
+    },
+  });
+
+  // Get unique categories and sources from all transactions for filter options
+  const availableCategories = useMemo(() => {
+    return Array.from(new Set(transactions.map(t => t.category))).sort();
+  }, [transactions]);
+
+  const availableSources = useMemo(() => {
+    return Array.from(new Set(transactions.map(t => t.source))).sort();
+  }, [transactions]);
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [transactionFilters]);
 
   const { data: notifications = [], isLoading: notificationsLoading } = useQuery<Notification[]>({
     queryKey: ["/api/notifications"],
@@ -136,6 +193,7 @@ export default function Dashboard() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/transactions/query"] });
       queryClient.invalidateQueries({ queryKey: ["/api/rewards"] });
       queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
       toast({
@@ -151,6 +209,7 @@ export default function Dashboard() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/transactions/query"] });
       toast({
         title: "Transaction Updated",
         description: "Transaction has been updated successfully",
@@ -164,6 +223,7 @@ export default function Dashboard() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/transactions/query"] });
       toast({
         title: "Transaction Deleted",
         description: "Transaction has been removed",
@@ -177,6 +237,7 @@ export default function Dashboard() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/transactions/query"] });
       queryClient.invalidateQueries({ queryKey: ["/api/rewards"] });
       queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
       toast({
@@ -783,15 +844,38 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              {transactionsLoading ? (
+              <TransactionFilters
+                cards={cards}
+                filters={transactionFilters}
+                onFiltersChange={setTransactionFilters}
+                availableCategories={availableCategories}
+                availableSources={availableSources}
+              />
+
+              {paginatedTransactionsLoading ? (
                 <TransactionLoadingSkeleton />
               ) : (
-                <TransactionList 
-                  transactions={transactions} 
-                  cards={cards}
-                  onEdit={(id, updates) => editTransactionMutation.mutate({ id, updates })}
-                  onDelete={(id) => deleteTransactionMutation.mutate(id)}
-                />
+                <>
+                  <TransactionList 
+                    transactions={paginatedTransactions?.transactions || []} 
+                    cards={cards}
+                    onEdit={(id, updates) => editTransactionMutation.mutate({ id, updates })}
+                    onDelete={(id) => deleteTransactionMutation.mutate(id)}
+                  />
+                  {paginatedTransactions && (
+                    <TransactionPagination
+                      currentPage={paginatedTransactions.page}
+                      totalPages={paginatedTransactions.totalPages}
+                      pageSize={paginatedTransactions.pageSize}
+                      total={paginatedTransactions.total}
+                      onPageChange={setCurrentPage}
+                      onPageSizeChange={(newSize) => {
+                        setPageSize(newSize);
+                        setCurrentPage(1);
+                      }}
+                    />
+                  )}
+                </>
               )}
             </TabsContent>
 
