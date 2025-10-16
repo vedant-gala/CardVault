@@ -1,9 +1,10 @@
 # CardVault - Credit Card Management App
 
 ## Overview
-A Cred-inspired credit card management application with intelligent email/SMS parsing, reward tracking, and automated notifications. Built with React, Express, OpenAI GPT-5, and Gmail API integration.
+A Cred-inspired credit card management application with intelligent email/SMS parsing, reward tracking, and automated notifications. Built with React, Express, OpenAI GPT-5, Replit Auth, and Gmail API integration.
 
 ## Features
+- **User Authentication**: Secure login/logout with Replit Auth (Google, GitHub, email/password)
 - **Card Management**: Add, view, delete, and manage multiple credit cards with customizable colors and details
 - **Rewards Tracking**: Configure conditional rewards with threshold-based progress tracking
 - **Transaction Management**: Manual entry or intelligent SMS parsing using OpenAI
@@ -15,6 +16,7 @@ A Cred-inspired credit card management application with intelligent email/SMS pa
 - **Spending Analytics**: Category breakdowns, monthly comparisons, and spending insights
 - **AI-Powered Recommendations**: Personalized credit card offers based on spending patterns
 - **Beautiful UI**: Cred-inspired dark theme with purple gradients and smooth animations
+- **Data Isolation**: Complete user data isolation with secure session management
 
 ## Architecture
 
@@ -25,11 +27,15 @@ A Cred-inspired credit card management application with intelligent email/SMS pa
 - **Animations**: Framer Motion for smooth transitions and progress indicators
 
 ### Backend (Express + TypeScript)
+- **Authentication**: Replit Auth with OIDC (OpenID Connect) supporting Google, GitHub, and email/password login
 - **Database**: PostgreSQL (Neon) with Drizzle ORM for data persistence
+- **Session Management**: PostgreSQL-backed sessions with 7-day TTL and secure cookies
+- **Authorization**: isAuthenticated middleware on all API routes with userId-based data filtering
 - **AI Integration**: OpenAI GPT-5 for transaction extraction, email analysis, and offer recommendations
 - **Gmail API**: Replit connector for automated email fetching
 - **WebSocket**: Real-time push notifications for transactions and reward unlocks
 - **API Routes**: RESTful endpoints for cards, rewards, transactions, notifications, bills, payments, analytics
+- **Security**: Resource-level ownership verification prevents cross-user data access
 
 ## Key User Journeys
 
@@ -62,13 +68,22 @@ A Cred-inspired credit card management application with intelligent email/SMS pa
 5. Notifications created with simple summaries
 
 ## Recent Changes
+- October 16, 2025: **Implemented complete user authentication and authorization system**
+  - Added Replit Auth with OIDC supporting Google, GitHub, and email/password login
+  - Created users and sessions tables with PostgreSQL-backed session storage
+  - Implemented isAuthenticated middleware protecting all API routes
+  - Added userId foreign keys to cards and creditScores tables for data isolation
+  - Updated all storage methods with resource-level ownership verification
+  - Created Landing page for logged-out users with login button
+  - Added logout functionality to Dashboard with secure session termination
+  - **Security**: Fixed cross-tenant data access vulnerability with userId filtering on all operations
 - October 15, 2025: Completed all 6 core features
 - Migrated from in-memory storage to PostgreSQL database with full persistence
 - Implemented bill payment system with payment tracking, status management, and autopay infrastructure
 - Added credit score tracking with history visualization and improvement suggestions
 - Built spending analytics dashboard with category breakdowns and monthly comparisons
 - Integrated AI-powered offer recommendations using OpenAI GPT-5 based on spending patterns
-- **Implemented WebSocket push notification system for real-time transaction alerts and reward unlocks**
+- Implemented WebSocket push notification system for real-time transaction alerts and reward unlocks
 - Connected Gmail via Replit connector for email automation
 - Added card deletion functionality with hover-reveal delete button
 - Beautiful loading states, error handling, and Cred-inspired dark theme
