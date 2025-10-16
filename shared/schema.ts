@@ -110,7 +110,8 @@ export const autopaySettings = pgTable("autopay_settings", {
   enabled: boolean("enabled").notNull().default(false),
   paymentType: varchar("payment_type", { length: 20 }).notNull().default("minimum"),
   daysBefore: integer("days_before").notNull().default(3),
-  paymentMethod: varchar("payment_method", { length: 50 }).notNull(),
+  fixedAmount: decimal("fixed_amount", { precision: 12, scale: 2 }),
+  paymentMethod: varchar("payment_method", { length: 50 }).notNull().default("bank_account"),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
   updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
 });

@@ -12,6 +12,7 @@ import { AddRewardDialog } from "@/components/AddRewardDialog";
 import { AddTransactionDialog } from "@/components/AddTransactionDialog";
 import { SmsParsingDialog } from "@/components/SmsParsingDialog";
 import { BillPaymentDialog } from "@/components/BillPaymentDialog";
+import { AutopaySettingsDialog } from "@/components/AutopaySettingsDialog";
 import { CardLoadingSkeleton, RewardLoadingSkeleton, TransactionLoadingSkeleton } from "@/components/LoadingSkeleton";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -450,6 +451,25 @@ export default function Dashboard() {
               <div className="flex items-center justify-between">
                 <h2 className="text-2xl font-bold">Bills & Payments</h2>
               </div>
+
+              {cards.length > 0 && (
+                <div>
+                  <h3 className="text-lg font-semibold mb-3">Autopay Settings</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {cards.map((card) => (
+                      <CardComponent key={card.id} className="p-4">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="font-semibold">{card.cardName}</p>
+                            <p className="text-sm text-muted-foreground">••••{card.lastFourDigits}</p>
+                          </div>
+                          <AutopaySettingsDialog card={card} />
+                        </div>
+                      </CardComponent>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {billsLoading ? (
                 <CardLoadingSkeleton />
