@@ -68,6 +68,15 @@ A Cred-inspired credit card management application with intelligent email/SMS pa
 5. Notifications created with simple summaries
 
 ## Recent Changes
+- October 16, 2025: **Completed full CRUD operations and security hardening**
+  - **Edit Functionality**: Added EditCardDialog, EditRewardDialog, and EditTransactionDialog components
+  - **PATCH Endpoints**: Created /api/cards/:id, /api/rewards/:id, and /api/transactions/:id with Zod validation
+  - **Delete Transaction**: Implemented transaction deletion with userId ownership verification
+  - **Credit Score Management**: Added AddCreditScoreDialog for manual credit score entry
+  - **WebSocket Security**: Replaced query parameter userId with session-based authentication to prevent spoofing
+  - **Input Validation**: All PATCH endpoints now validate with insertSchema.partial() before storage mutations
+  - **Bug Fix**: PATCH /api/transactions now recalculates reward progress and triggers unlock notifications when amount changes
+  - All security vulnerabilities resolved and architect-approved
 - October 16, 2025: **Implemented complete user authentication and authorization system**
   - Added Replit Auth with OIDC supporting Google, GitHub, and email/password login
   - Created users and sessions tables with PostgreSQL-backed session storage
@@ -109,15 +118,19 @@ A Cred-inspired credit card management application with intelligent email/SMS pa
 ### Cards
 - `GET /api/cards` - List all cards
 - `POST /api/cards` - Create new card
+- `PATCH /api/cards/:id` - Update card (validates with Zod partial schema)
 - `DELETE /api/cards/:id` - Remove card
 
 ### Rewards
 - `GET /api/rewards` - List all rewards
 - `POST /api/rewards` - Create new reward
+- `PATCH /api/rewards/:id` - Update reward (validates with Zod partial schema)
 
 ### Transactions
 - `GET /api/transactions` - List all transactions
 - `POST /api/transactions` - Create transaction (auto-updates rewards)
+- `PATCH /api/transactions/:id` - Update transaction (recalculates reward progress, validates with Zod partial schema)
+- `DELETE /api/transactions/:id` - Delete transaction
 - `POST /api/parse-sms` - Parse SMS and create transaction
 
 ### Notifications

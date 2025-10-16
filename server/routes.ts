@@ -176,12 +176,68 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = req.user.claims.sub;
       const updates = insertTransactionSchema.partial().parse(req.body);
-      const transaction = await storage.updateTransaction(req.params.id, userId, updates);
-      if (transaction) {
-        res.json(transaction);
-      } else {
-        res.status(404).json({ error: "Transaction not found" });
+      
+      // Get the old transaction to calculate the difference
+      const allTransactions = await storage.getTransactions(userId);
+      const oldTransaction = allTransactions.find(t => t.id === req.params.id);
+      if (!oldTransaction) {
+        return res.status(404).json({ error: "Transaction not found" });
       }
+      
+      const transaction = await storage.updateTransaction(req.params.id, userId, updates);
+      if (!transaction) {
+        return res.status(404).json({ error: "Transaction not found" });
+      }
+      
+      // Recalculate rewards if amount changed
+      if (updates.amount !== undefined) {
+        const oldAmount = Number(oldTransaction.amount);
+        const newAmount = Number(transaction.amount);
+        const amountDifference = newAmount - oldAmount;
+        
+        // Update card balance
+        const card = await storage.getCard(transaction.cardId, userId);
+        if (card) {
+          const newBalance = Number(card.currentBalance) + amountDifference;
+          await storage.updateCardBalance(card.id, userId, newBalance.toString());
+        }
+        
+        // Recalculate reward progress for this card
+        const rewards = await storage.getRewardsByCard(transaction.cardId, userId);
+        const cardTransactions = await storage.getTransactions(userId);
+        const cardTxns = cardTransactions.filter(t => t.cardId === transaction.cardId);
+        
+        for (const reward of rewards) {
+          // Calculate total spending for this card
+          const totalSpending = cardTxns.reduce((sum, t) => sum + Number(t.amount), 0);
+          const oldProgress = Number(reward.currentProgress);
+          
+          await storage.updateRewardProgress(reward.id, userId, totalSpending.toString());
+          
+          // Check for reward unlock
+          const threshold = Number(reward.threshold);
+          if (totalSpending >= threshold && oldProgress < threshold) {
+            const rewardNotif = await storage.createNotification({
+              cardId: transaction.cardId,
+              title: "Reward Unlocked! 🎉",
+              message: `You've unlocked ${reward.rewardValue} on your ${card?.cardName || 'card'}!`,
+              type: "reward",
+              metadata: JSON.stringify({ rewardId: reward.id })
+            }, userId);
+            broadcastNotification({
+              id: rewardNotif.id,
+              type: rewardNotif.type,
+              title: rewardNotif.title,
+              message: rewardNotif.message,
+              cardId: rewardNotif.cardId || undefined,
+              read: rewardNotif.isRead,
+              createdAt: rewardNotif.createdAt.toISOString(),
+            }, userId);
+          }
+        }
+      }
+      
+      res.json(transaction);
     } catch (error: any) {
       res.status(400).json({ error: error.message });
     }
