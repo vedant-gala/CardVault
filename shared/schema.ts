@@ -1,10 +1,33 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, decimal, timestamp, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, decimal, timestamp, boolean, index, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
+// Session storage table for Replit Auth
+export const sessions = pgTable(
+  "sessions",
+  {
+    sid: varchar("sid").primaryKey(),
+    sess: jsonb("sess").notNull(),
+    expire: timestamp("expire").notNull(),
+  },
+  (table) => [index("IDX_session_expire").on(table.expire)],
+);
+
+// User storage table for Replit Auth
+export const users = pgTable("users", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  email: varchar("email").unique(),
+  firstName: varchar("first_name"),
+  lastName: varchar("last_name"),
+  profileImageUrl: varchar("profile_image_url"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 export const cards = pgTable("cards", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
   cardName: text("card_name").notNull(),
   bankName: text("bank_name").notNull(),
   lastFourDigits: varchar("last_four_digits", { length: 4 }).notNull(),
@@ -94,6 +117,7 @@ export const autopaySettings = pgTable("autopay_settings", {
 
 export const creditScores = pgTable("credit_scores", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
   score: integer("score").notNull(),
   provider: varchar("provider", { length: 50 }).notNull().default("CIBIL"),
   recordedAt: timestamp("recorded_at").notNull().default(sql`now()`),
@@ -101,7 +125,7 @@ export const creditScores = pgTable("credit_scores", {
   suggestions: text("suggestions"),
 });
 
-export const insertCardSchema = createInsertSchema(cards).omit({ id: true, currentBalance: true });
+export const insertCardSchema = createInsertSchema(cards).omit({ id: true, userId: true, currentBalance: true });
 export const insertRewardSchema = createInsertSchema(rewards).omit({ id: true, currentProgress: true });
 export const insertTransactionSchema = createInsertSchema(transactions).omit({ id: true, transactionDate: true });
 export const insertNotificationSchema = createInsertSchema(notifications).omit({ id: true, createdAt: true });
@@ -109,7 +133,7 @@ export const insertSmsMessageSchema = createInsertSchema(smsMessages).omit({ id:
 export const insertBillSchema = createInsertSchema(bills).omit({ id: true, createdAt: true });
 export const insertPaymentSchema = createInsertSchema(payments).omit({ id: true, paymentDate: true });
 export const insertAutopaySettingsSchema = createInsertSchema(autopaySettings).omit({ id: true, createdAt: true, updatedAt: true });
-export const insertCreditScoreSchema = createInsertSchema(creditScores).omit({ id: true, recordedAt: true });
+export const insertCreditScoreSchema = createInsertSchema(creditScores).omit({ id: true, userId: true, recordedAt: true });
 
 export type Card = typeof cards.$inferSelect;
 export type InsertCard = z.infer<typeof insertCardSchema>;
@@ -129,3 +153,5 @@ export type AutopaySettings = typeof autopaySettings.$inferSelect;
 export type InsertAutopaySettings = z.infer<typeof insertAutopaySettingsSchema>;
 export type CreditScore = typeof creditScores.$inferSelect;
 export type InsertCreditScore = z.infer<typeof insertCreditScoreSchema>;
+export type User = typeof users.$inferSelect;
+export type UpsertUser = typeof users.$inferInsert;
