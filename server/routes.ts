@@ -103,6 +103,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.delete("/api/rewards/:id", isAuthenticated, async (req: any, res) => {
+    const userId = req.user.claims.sub;
+    const deleted = await storage.deleteReward(req.params.id, userId);
+    if (!deleted) {
+      res.status(404).json({ error: "Reward not found" });
+      return;
+    }
+    res.json({ success: deleted });
+  });
+
   app.get("/api/transactions", isAuthenticated, async (req: any, res) => {
     const userId = req.user.claims.sub;
     const transactions = await storage.getTransactions(userId);

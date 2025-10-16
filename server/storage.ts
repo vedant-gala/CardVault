@@ -32,6 +32,7 @@ export interface IStorage {
   createReward(reward: InsertReward, userId: string): Promise<Reward>;
   updateReward(id: string, userId: string, updates: Partial<InsertReward>): Promise<Reward | undefined>;
   updateRewardProgress(id: string, userId: string, progress: string): Promise<Reward | undefined>;
+  deleteReward(id: string, userId: string): Promise<boolean>;
 
   getTransactions(userId: string): Promise<Transaction[]>;
   getTransactionsByCard(cardId: string, userId: string): Promise<Transaction[]>;
@@ -223,6 +224,19 @@ export class MemStorage implements IStorage {
     reward.currentProgress = progress;
     this.rewards.set(id, reward);
     return reward;
+  }
+
+  async deleteReward(id: string, userId: string): Promise<boolean> {
+    const reward = this.rewards.get(id);
+    if (!reward) {
+      return false;
+    }
+    const card = this.cards.get(reward.cardId);
+    if (!card || card.userId !== userId) {
+      return false;
+    }
+    this.rewards.delete(id);
+    return true;
   }
 
   async getTransactions(userId: string): Promise<Transaction[]> {
@@ -661,6 +675,19 @@ export class PgStorage implements IStorage {
       .where(eq(rewards.id, id))
       .returning();
     return result[0];
+  }
+
+  async deleteReward(id: string, userId: string): Promise<boolean> {
+    const reward = await db.select().from(rewards).where(eq(rewards.id, id));
+    if (!reward[0]) {
+      return false;
+    }
+    const card = await db.select().from(cards).where(and(eq(cards.id, reward[0].cardId), eq(cards.userId, userId)));
+    if (!card[0]) {
+      return false;
+    }
+    await db.delete(rewards).where(eq(rewards.id, id));
+    return true;
   }
 
   async getTransactions(userId: string): Promise<Transaction[]> {

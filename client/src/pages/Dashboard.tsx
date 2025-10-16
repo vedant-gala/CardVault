@@ -23,7 +23,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { useAuth } from "@/hooks/useAuth";
-import { CreditCard, Gift, Receipt, Bell, Mail, Sparkles, FileText, TrendingUp, BarChart3, LogOut } from "lucide-react";
+import { CreditCard, Gift, Receipt, Bell, Mail, Sparkles, FileText, TrendingUp, BarChart3, LogOut, Trash2 } from "lucide-react";
 import { Card as CardComponent } from "@/components/ui/card";
 
 export default function Dashboard() {
@@ -113,6 +113,19 @@ export default function Dashboard() {
       toast({
         title: "Reward Updated",
         description: "The reward has been updated successfully",
+      });
+    },
+  });
+
+  const deleteRewardMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return await apiRequest("DELETE", `/api/rewards/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/rewards"] });
+      toast({
+        title: "Reward Deleted",
+        description: "The reward has been removed successfully",
       });
     },
   });
@@ -478,17 +491,26 @@ export default function Dashboard() {
                     {rewards.map((reward) => {
                       const card = cards.find(c => c.id === reward.cardId);
                       return (
-                        <div key={reward.id} className="relative">
+                        <div key={reward.id} className="relative group">
                           <RewardProgressCard 
                             reward={reward} 
                             cardColor={card?.cardColor ?? undefined}
                           />
-                          <div className="absolute top-4 right-4 z-10">
+                          <div className="absolute top-2 right-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
                             <EditRewardDialog
                               reward={reward}
                               cards={cards}
                               onEdit={(id, updates) => editRewardMutation.mutate({ id, updates })}
                             />
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="bg-destructive/10 hover:bg-destructive/20 text-destructive"
+                              onClick={() => deleteRewardMutation.mutate(reward.id)}
+                              data-testid={`button-delete-reward-${reward.id}`}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
                           </div>
                         </div>
                       );
